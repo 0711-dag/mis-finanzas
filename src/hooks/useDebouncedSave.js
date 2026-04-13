@@ -4,7 +4,7 @@
 import { useCallback, useRef } from "react";
 import { db, ref, set } from "../firebase.js";
 
-export default function useDebouncedSave(dbPath, user, setSyncing) {
+export default function useDebouncedSave(dbPath, user, setSyncing, setLastSyncTime) {
   const pendingRef = useRef(null);
   const timeoutRef = useRef(null);
   const isSavingRef = useRef(false);
@@ -30,6 +30,7 @@ export default function useDebouncedSave(dbPath, user, setSyncing) {
         isSavingRef.current = true;
         try {
           await set(ref(db, dbPath), pendingRef.current);
+          setLastSyncTime(new Date());
         } catch (e) {
           console.error("Error saving:", e);
         }
@@ -40,7 +41,7 @@ export default function useDebouncedSave(dbPath, user, setSyncing) {
         pendingRef.current = null;
       }, 800);
     },
-    [dbPath, user, setSyncing]
+    [dbPath, user, setSyncing, setLastSyncTime]
   );
 
   return { debouncedSave, isSavingRef };
