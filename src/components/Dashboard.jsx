@@ -14,7 +14,7 @@ import ReportModal from "./ReportModal.jsx";
 
 export default function Dashboard({ user }) {
   const {
-    data, loading, syncing, online, validationError,
+    data, loading, syncing, online, lastSyncTime, validationError,
     save, addRow, updField, deleteRow, saveRowEdit, addDebtWithPlan, resetAll,
     isEditingRef,
   } = useFinancialData(user);
@@ -128,7 +128,11 @@ export default function Dashboard({ user }) {
         <div className="header-left">
           <h1 className="header-title">💰 Control Financiero Familiar</h1>
           <span className={`sync-badge ${syncing ? "sync-badge--saving" : online ? "sync-badge--online" : "sync-badge--offline"}`}>
-            {syncing ? "⏳ Guardando..." : online ? "☁️ Sincronizado" : "⚠️ Sin conexión"}
+            {syncing
+              ? "⏳ Guardando..."
+              : online
+                ? `☁️ ${lastSyncTime ? lastSyncTime.toLocaleString("es-ES", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "Sincronizado"}`
+                : "⚠️ Sin conexión"}
           </span>
         </div>
         <div className="header-right">
