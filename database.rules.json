@@ -1,0 +1,52 @@
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read":  "$uid === auth.uid",
+        ".write": "$uid === auth.uid",
+        "family-finance": {
+          "debts": {
+            ".validate": "newData.hasChildren() == false || newData.children().count() <= 50",
+            "$item": {
+              ".validate": "newData.hasChildren(['entidad', 'saldoPendiente'])"
+            }
+          },
+          "payments": {
+            ".validate": "newData.hasChildren() == false || newData.children().count() <= 500",
+            "$item": {
+              ".validate": "newData.hasChildren(['concepto', 'monto'])"
+            }
+          },
+          "fixedExpenses": {
+            ".validate": "newData.hasChildren() == false || newData.children().count() <= 30",
+            "$item": {
+              ".validate": "newData.hasChildren(['concepto', 'monto'])"
+            }
+          },
+          "incomes": {
+            ".validate": "newData.hasChildren() == false || newData.children().count() <= 100",
+            "$item": {
+              ".validate": "newData.hasChildren(['concepto', 'amount'])"
+            }
+          },
+          "variableExpenses": {
+            ".validate": "newData.hasChildren() == false || newData.children().count() <= 500",
+            "$item": {
+              ".validate": "newData.hasChildren(['concepto', 'monto'])"
+            }
+          },
+          "$other": {
+            ".validate": false
+          }
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "$other": {
+      ".read":  false,
+      ".write": false
+    }
+  }
+}
