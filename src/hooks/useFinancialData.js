@@ -34,10 +34,11 @@ export default function useFinancialData(user) {
   const [syncing, setSyncing] = useState(false);
   const [online, setOnline] = useState(true);
   const [validationError, setValidationError] = useState("");
+  const [lastSyncTime, setLastSyncTime] = useState(null);
   const isEditingRef = useRef(false);
 
   const dbPath = user ? `users/${user.uid}/family-finance` : null;
-  const { debouncedSave, isSavingRef } = useDebouncedSave(dbPath, user, setSyncing);
+  const { debouncedSave, isSavingRef } = useDebouncedSave(dbPath, user, setSyncing, setLastSyncTime);
 
   // Auto-clear validation errors
   useEffect(() => {
@@ -69,6 +70,7 @@ export default function useFinancialData(user) {
         }
         setLoading(false);
         setOnline(true);
+        setLastSyncTime(new Date());
       },
       (error) => {
         console.error("Firebase error:", error);
@@ -239,6 +241,7 @@ export default function useFinancialData(user) {
     loading,
     syncing,
     online,
+    lastSyncTime,
     validationError,
     setValidationError,
     isEditingRef,
