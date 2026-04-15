@@ -74,7 +74,7 @@ export default function PaymentCalendar({ data, filteredPayments, save, addRow, 
 
   const handleAdd = () => {
     setAddingTo("payments");
-    setNewRow({ concepto: "", monto: "", dayPago: todayISO(), estado: "PENDIENTE", debtId: "" });
+    setNewRow({ concepto: "", monto: "", dayPago: todayISO(), estado: "PENDIENTE", debtId: "", fixedExpenseId: "" });
   };
 
   const handleSaveNew = () => {
@@ -86,14 +86,51 @@ export default function PaymentCalendar({ data, filteredPayments, save, addRow, 
       month: dateToFinancialMonth(newRow.dayPago) || selectedMonth,
       debtId: newRow.debtId || "",
       cuotaNum: newRow.cuotaNum || null,
+      fixedExpenseId: newRow.fixedExpenseId || "",
     });
     if (success) setAddingTo(null);
   };
 
   const activDebts = (data.debts || []).filter((d) => d.totalCuotas > 0 && (d.cuotaActual || 0) < d.totalCuotas);
 
+  // Helper: obtener tipo de pago para el icono
+  const getPaymentOrigin = (p) => {
+    if (p.fixedExpenseId) return { icon: "🔄", label: "Gasto fijo recurrente", color: "#7c3aed" };
+    if (p.debtId) return { icon: "📌", label: "Cuota de deuda", color: "#6366f1" };
+    return { icon: "📝", label: "Pago manual", color: "#6b7280" };
+  };
+
   return (
     <Section title={`📅 Calendario de Pagos — ${formatMonthLabel(selectedMonth)}`} onAdd={handleAdd}>
+      {/* Mini resumen de pagos del ciclo */}
+      {filteredPayments.length > 0 && (
+        <div style={{
+          display: "flex",
+          gap: 8,
+          padding: "6px 12px",
+          background: "#f8fafc",
+          borderBottom: "1px solid #e5e7eb",
+          fontSize: 11,
+          flexWrap: "wrap",
+        }}>
+          {filteredPayments.some((p) => p.fixedExpenseId) && (
+            <span style={{ color: "#7c3aed", fontWeight: 600 }}>
+              🔄 {filteredPayments.filter((p) => p.fixedExpenseId).length} recurrentes
+            </span>
+          )}
+          {filteredPayments.some((p) => p.debtId) && (
+            <span style={{ color: "#6366f1", fontWeight: 600 }}>
+              📌 {filteredPayments.filter((p) => p.debtId).length} cuotas
+            </span>
+          )}
+          {filteredPayments.some((p) => !p.fixedExpenseId && !p.debtId) && (
+            <span style={{ color: "#6b7280", fontWeight: 600 }}>
+              📝 {filteredPayments.filter((p) => !p.fixedExpenseId && !p.debtId).length} manuales
+            </span>
+          )}
+        </div>
+      )}
+
       <div style={{ overflowX: "auto" }}>
         <table>
           <thead>
@@ -103,10 +140,11 @@ export default function PaymentCalendar({ data, filteredPayments, save, addRow, 
             {filteredPayments.map((p) => {
               const linkedDebt = p.debtId ? (data.debts || []).find((d) => d.id === p.debtId) : null;
               const cuotaLabel = p.cuotaNum ? `Cuota ${p.cuotaNum} de ${linkedDebt?.totalCuotas || "?"}` : null;
+              const origin = getPaymentOrigin(p);
 
               return (
                 <tr key={p.id} style={{ background: p.estado === "PAGADO" ? "#f0fdf4" : "#fef2f2" }}>
-                  <td className="editable-cell" onDoubleClick={() => !p.debtId && startEdit(p.id, "concepto", p.concepto)}>
+                  <td className="editable-cell" onDoubleClick={() => !p.debtId && !p.fixedExpenseId && startEdit(p.id, "concepto", p.concepto)}>
                     {isEditing(p.id, "concepto") ? (
                       <CellInput value={editValue} onChange={setEditValue} onConfirm={confirmEdit} onCancel={cancelEdit} field="concepto" />
                     ) : (
@@ -117,10 +155,15 @@ export default function PaymentCalendar({ data, filteredPayments, save, addRow, 
                             {p.estado === "PAGADO" ? `✅ ${cuotaLabel}` : `📌 ${cuotaLabel}`}
                           </div>
                         )}
+                        {p.fixedExpenseId && !cuotaLabel && (
+                          <div style={{ fontSize: 10, fontWeight: 600, marginTop: 1, color: origin.color }}>
+                            {p.estado === "PAGADO" ? "✅ Pagado" : "🔄 Recurrente"}
+                          </div>
+                        )}
                       </div>
                     )}
                   </td>
-                  <td className="editable-cell mono" onDoubleClick={() => startEdit(p.id, "monto", p.monto)} style={{ fontWeight: 600 }}>
+                  <td className="editable-cell mono" onDoubleClick={() => !p.fixedExpenseId && startEdit(p.id, "monto", p.monto)} style={{ fontWeight: 600 }}>
                     {isEditing(p.id, "monto") ? <CellInput value={editValue} onChange={setEditValue} onConfirm={confirmEdit} onCancel={cancelEdit} field="monto" /> : fmt(p.monto)}
                   </td>
                   <td className="editable-cell" onDoubleClick={() => startEdit(p.id, "dayPago", p.dayPago)}>
