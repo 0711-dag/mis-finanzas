@@ -1,6 +1,7 @@
 // ══════════════════════════════════════════════
 // 📊 Hook principal de datos financieros
 // Carga, guarda y gestiona todo el CRUD
+// + Auto-generación de pagos recurrentes
 // ══════════════════════════════════════════════
 import { useState, useEffect, useCallback, useRef } from "react";
 import { db, ref, onValue } from "../firebase.js";
@@ -18,7 +19,7 @@ import {
   LIMITS,
 } from "../validation.js";
 import { genId, monthKey, addMonths } from "../utils/format.js";
-import { dateToFinancialMonth } from "../utils/cycle.js";
+import { dateToFinancialMonth, getRecurringPaymentDate } from "../utils/cycle.js";
 
 const emptyData = () => ({
   debts: [],
@@ -27,6 +28,41 @@ const emptyData = () => ({
   incomes: [],
   variableExpenses: [],
 });
+
+/**
+ * Genera pagos automáticos para gastos fijos recurrentes en un ciclo dado.
+ * Devuelve los nuevos pagos que faltan (no duplica los existentes).
+ */
+function generateRecurringPayments(fixedExpenses, existingPayments, cycleMK) {
+  const recurrentes = (fixedExpenses || []).filter((f) => f.recurrente);
+  const newPayments = [];
+
+  for (const expense of recurrentes) {
+    // Comprobar si ya existe un pago generado para este gasto fijo en este ciclo
+    const alreadyExists = existingPayments.some(
+      (p) => p.fixedExpenseId === expense.id && p.month === cycleMK
+    );
+    if (alreadyExists) continue;
+
+    // Calcular la fecha de pago dentro del ciclo
+    const payDate = getRecurringPaymentDate(expense.diaPago, cycleMK);
+    if (!payDate) continue;
+
+    newPayments.push({
+      id: genId() + "_r",
+      concepto: `🔄 ${expense.concepto}`,
+      monto: expense.monto || 0,
+      dayPago: payDate,
+      estado: "PENDIENTE",
+      month: cycleMK,
+      debtId: "",
+      cuotaNum: null,
+      fixedExpenseId: expense.id,
+    });
+  }
+
+  return newPayments;
+}
 
 export default function useFinancialData(user) {
   const [data, setData] = useState(null);
@@ -97,6 +133,38 @@ export default function useFinancialData(user) {
     [debouncedSave]
   );
 
+  // ══════════════════════════════════════════════
+  // 🔄 AUTO-GENERAR PAGOS RECURRENTES
+  // Se ejecuta cuando cambian los datos o al cargar
+  // ══════════════════════════════════════════════
+  const ensureRecurringPayments = useCallback(
+    (currentData, cycleMK) => {
+      if (!currentData) return currentData;
+
+      const newPayments = generateRecurringPayments(
+        currentData.fixedExpenses,
+        currentData.payments || [],
+        cycleMK
+      );
+
+      if (newPayments.length === 0) return currentData;
+
+      // Verificar que no superamos el límite de pagos
+      const totalPayments = (currentData.payments || []).length + newPayments.length;
+      if (totalPayments > LIMITS.MAX_PAYMENTS) return currentData;
+
+      const updatedData = {
+        ...currentData,
+        payments: [...(currentData.payments || []), ...newPayments],
+      };
+
+      // Guardar automáticamente
+      save(updatedData);
+      return updatedData;
+    },
+    [save]
+  );
+
   // ── CRUD helpers ──
 
   const addRow = useCallback(
@@ -161,6 +229,10 @@ export default function useFinancialData(user) {
       if (section === "debts") {
         newData = { ...newData, payments: (newData.payments || []).filter((p) => p.debtId !== id) };
       }
+      // Si se borra un gasto fijo, eliminar sus pagos recurrentes vinculados
+      if (section === "fixedExpenses") {
+        newData = { ...newData, payments: (newData.payments || []).filter((p) => p.fixedExpenseId !== id) };
+      }
       save(newData);
     },
     [data, save]
@@ -174,12 +246,48 @@ export default function useFinancialData(user) {
       if (fields[dateField] && /^\d{4}-\d{2}-\d{2}$/.test(fields[dateField])) {
         extraUpdates.month = dateToFinancialMonth(fields[dateField]);
       }
-      save({
+
+      let updatedData = {
         ...data,
         [section]: (data[section] || []).map((r) =>
           r.id === id ? { ...r, ...fields, ...extraUpdates } : r
         ),
-      });
+      };
+
+      // Si editamos un gasto fijo recurrente, actualizar sus pagos PENDIENTES vinculados
+      if (section === "fixedExpenses") {
+        const updatedExpense = updatedData.fixedExpenses.find((f) => f.id === id);
+        if (updatedExpense) {
+          updatedData = {
+            ...updatedData,
+            payments: (updatedData.payments || []).map((p) => {
+              if (p.fixedExpenseId !== id || p.estado === "PAGADO") return p;
+              // Actualizar concepto y monto del pago pendiente
+              const newPayDate = updatedExpense.recurrente
+                ? getRecurringPaymentDate(updatedExpense.diaPago, p.month)
+                : p.dayPago;
+              return {
+                ...p,
+                concepto: `🔄 ${updatedExpense.concepto}`,
+                monto: updatedExpense.monto || 0,
+                dayPago: newPayDate || p.dayPago,
+              };
+            }),
+          };
+
+          // Si se desactivó recurrente, eliminar pagos pendientes vinculados
+          if (!updatedExpense.recurrente) {
+            updatedData = {
+              ...updatedData,
+              payments: (updatedData.payments || []).filter(
+                (p) => !(p.fixedExpenseId === id && p.estado === "PENDIENTE")
+              ),
+            };
+          }
+        }
+      }
+
+      save(updatedData);
     },
     [data, save]
   );
@@ -222,12 +330,43 @@ export default function useFinancialData(user) {
             month: financialMonth,
             debtId: debtId,
             cuotaNum: i + 1,
+            fixedExpenseId: "",
           });
         }
       }
       save({ ...data, debts: [...(data.debts || []), newDebt], payments: newPayments });
       setValidationError("");
       return true;
+    },
+    [data, save]
+  );
+
+  // ── Toggle recurrente de un gasto fijo ──
+  const toggleRecurrente = useCallback(
+    (fixedExpenseId) => {
+      if (!data) return;
+      const expense = (data.fixedExpenses || []).find((f) => f.id === fixedExpenseId);
+      if (!expense) return;
+
+      const newRecurrente = !expense.recurrente;
+      let updatedData = {
+        ...data,
+        fixedExpenses: data.fixedExpenses.map((f) =>
+          f.id === fixedExpenseId ? { ...f, recurrente: newRecurrente } : f
+        ),
+      };
+
+      // Si se desactiva, eliminar pagos pendientes de este gasto fijo
+      if (!newRecurrente) {
+        updatedData = {
+          ...updatedData,
+          payments: (updatedData.payments || []).filter(
+            (p) => !(p.fixedExpenseId === fixedExpenseId && p.estado === "PENDIENTE")
+          ),
+        };
+      }
+
+      save(updatedData);
     },
     [data, save]
   );
@@ -252,5 +391,7 @@ export default function useFinancialData(user) {
     saveRowEdit,
     addDebtWithPlan,
     resetAll,
+    toggleRecurrente,
+    ensureRecurringPayments,
   };
 }
