@@ -182,7 +182,7 @@ tr:nth-child(even) td {
   align-items: center;
 }
 
-/* ── Sync Indicator ── */
+/* ── Sync Indicator (reemplaza sync-badge) ── */
 .sync-indicator {
   position: relative;
   display: inline-flex;
