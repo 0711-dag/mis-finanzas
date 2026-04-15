@@ -1,0 +1,387 @@
+/* ══════════════════════════════════════════════
+   🟢 FAB — Botón flotante de gasto rápido
+   ══════════════════════════════════════════════ */
+
+/* ── Backdrop ── */
+.fab-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 900;
+  animation: fabFadeIn 0.2s ease-out;
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+/* ── FAB Button ── */
+.fab-button {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: none;
+  background: #374151;
+  color: #fff;
+  font-size: 30px;
+  font-weight: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 1000;
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.25),
+    0 2px 6px rgba(0, 0, 0, 0.12);
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
+              background 0.2s,
+              box-shadow 0.2s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.fab-button:hover {
+  transform: scale(1.08);
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.3),
+    0 3px 8px rgba(0, 0, 0, 0.15);
+}
+
+.fab-button:active {
+  transform: scale(0.95);
+}
+
+.fab-button--open {
+  background: #6b7280;
+  transform: rotate(45deg);
+}
+
+.fab-button--open:hover {
+  transform: rotate(45deg) scale(1.08);
+}
+
+.fab-button__icon {
+  line-height: 1;
+  transition: transform 0.25s ease;
+  pointer-events: none;
+}
+
+/* ── Panel ── */
+.fab-panel {
+  position: fixed;
+  bottom: 96px;
+  right: 16px;
+  left: 16px;
+  max-width: 400px;
+  margin-left: auto;
+  background: #fff;
+  border-radius: 20px;
+  padding: 20px;
+  z-index: 950;
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.18),
+    0 4px 12px rgba(0, 0, 0, 0.08);
+  animation: fabSlideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: bottom right;
+}
+
+.fab-panel--shake {
+  animation: fabShake 0.4s ease;
+}
+
+.fab-panel--success {
+  animation: fabPulseSuccess 0.3s ease;
+}
+
+/* ── Panel header ── */
+.fab-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.fab-panel__title {
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: #1f2937;
+  letter-spacing: -0.3px;
+}
+
+.fab-panel__close {
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.fab-panel__close:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+/* ── Inputs ── */
+.fab-input {
+  width: 100%;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 12px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  background: #faf8f4;
+  color: #1f2937;
+  -webkit-appearance: none;
+}
+
+.fab-input:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.fab-input::placeholder {
+  color: #9ca3af;
+}
+
+.fab-input--concepto {
+  padding: 12px 14px;
+  font-size: 15px;
+  margin-bottom: 12px;
+}
+
+/* ── Monto (big & bold) ── */
+.fab-monto-wrap {
+  position: relative;
+  margin-bottom: 14px;
+}
+
+.fab-input--monto {
+  padding: 14px 40px 14px 16px;
+  font-size: 28px;
+  font-weight: 700;
+  font-family: 'IBM Plex Mono', monospace;
+  text-align: left;
+  letter-spacing: -0.5px;
+  /* Remove number spinners */
+  -moz-appearance: textfield;
+}
+
+.fab-input--monto::-webkit-outer-spin-button,
+.fab-input--monto::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.fab-monto-currency {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 22px;
+  font-weight: 700;
+  color: #9ca3af;
+  font-family: 'IBM Plex Mono', monospace;
+  pointer-events: none;
+}
+
+/* ── Category chips ── */
+.fab-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.fab-cat-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 20px;
+  border: 1.5px solid #e5e7eb;
+  background: #fff;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: 'IBM Plex Sans', sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.fab-cat-chip:hover {
+  border-color: #c7d2fe;
+  background: #eef2ff;
+}
+
+.fab-cat-chip:active {
+  transform: scale(0.95);
+}
+
+.fab-cat-chip--active {
+  border-color: #6366f1;
+  background: #eef2ff;
+  box-shadow: 0 0 0 1px #6366f1;
+}
+
+.fab-cat-chip__emoji {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.fab-cat-chip__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #374151;
+  white-space: nowrap;
+}
+
+/* ── Save button ── */
+.fab-save {
+  width: 100%;
+  padding: 14px 0;
+  border-radius: 14px;
+  border: none;
+  background: #374151;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  font-family: 'IBM Plex Sans', sans-serif;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s, opacity 0.15s;
+  letter-spacing: 0.2px;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.fab-save:hover:not(:disabled) {
+  background: #1f2937;
+}
+
+.fab-save:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.fab-save:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Success state ── */
+.fab-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 0;
+  gap: 8px;
+}
+
+.fab-success__icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #22c55e;
+  color: #fff;
+  font-size: 24px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fabCheckIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.fab-success__text {
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: #16a34a;
+}
+
+/* ── Animations ── */
+@keyframes fabFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fabSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fabShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-5px); }
+  80% { transform: translateX(5px); }
+}
+
+@keyframes fabPulseSuccess {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+
+@keyframes fabCheckIn {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ── Mobile adjustments ── */
+@media (max-width: 480px) {
+  .fab-button {
+    bottom: 20px;
+    right: 20px;
+    width: 56px;
+    height: 56px;
+    font-size: 28px;
+  }
+
+  .fab-panel {
+    bottom: 88px;
+    right: 12px;
+    left: 12px;
+    padding: 18px;
+    border-radius: 18px;
+  }
+
+  .fab-input--monto {
+    font-size: 24px;
+    padding: 12px 36px 12px 14px;
+  }
+
+  .fab-monto-currency {
+    font-size: 20px;
+    right: 14px;
+  }
+
+  .fab-cat-chip {
+    padding: 5px 8px;
+  }
+
+  .fab-cat-chip__label {
+    font-size: 10.5px;
+  }
+}
+
+/* ── When cancel float button is also present, push FAB up ── */
+.btn-cancel-float ~ .fab-button,
+.btn-cancel-float ~ .fab-backdrop + .fab-button {
+  bottom: 60px;
+}
