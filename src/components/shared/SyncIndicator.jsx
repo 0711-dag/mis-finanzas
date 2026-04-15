@@ -3,15 +3,6 @@ import { useState } from "react";
 export default function SyncIndicator({ syncing, online, lastSyncTime }) {
   const [showTooltip, setShowTooltip] = useState(false);
 
-  const formatTime = (date) => {
-    if (!date) return "—";
-    return date.toLocaleString("es-ES", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-  };
-
   const formatFull = (date) => {
     if (!date) return "Sin datos";
     return date.toLocaleString("es-ES", {
