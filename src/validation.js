@@ -85,9 +85,17 @@ function validateFixedExpense(expense) {
     concepto: sanitizeText(expense.concepto),
     diaPago: sanitizeText(expense.diaPago, 10),
     monto: sanitizeAmount(expense.monto),
+    recurrente: !!expense.recurrente,
   };
   if (!clean.concepto) errors.push("Falta el concepto");
   if (clean.monto <= 0) errors.push("El monto debe ser mayor que 0");
+  // Si es recurrente, el día de pago debe ser un número válido (1-31)
+  if (clean.recurrente) {
+    const day = parseInt(clean.diaPago);
+    if (isNaN(day) || day < 1 || day > 31) {
+      errors.push("Para gastos recurrentes, el día de pago debe ser un número entre 1 y 31");
+    }
+  }
   return { valid: errors.length === 0, errors, data: clean };
 }
 
@@ -128,6 +136,7 @@ function validatePayment(payment) {
     month: payment.month,
     debtId: payment.debtId || "",
     cuotaNum: payment.cuotaNum || null,
+    fixedExpenseId: payment.fixedExpenseId || "",
   };
   if (!clean.concepto) errors.push("Falta el concepto");
   if (clean.monto <= 0) errors.push("El monto debe ser mayor que 0");
