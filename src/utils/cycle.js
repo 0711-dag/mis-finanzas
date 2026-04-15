@@ -65,6 +65,38 @@ function formatMonthLabelWithCycle(mk) {
   return `${formatMonthLabel(mk)}  (${parseInt(sd)} ${MS[parseInt(sm) - 1]} → ${parseInt(ed)} ${MS[parseInt(em) - 1]})`;
 }
 
+/**
+ * Calcula la fecha de pago de un gasto fijo recurrente dentro de un ciclo.
+ * Si el día de pago cae dentro del ciclo (27 del mes anterior → 26 del mes),
+ * devuelve la fecha exacta. Si no, ajusta al mes correcto.
+ */
+function getRecurringPaymentDate(diaPago, cycleMK) {
+  const day = parseInt(diaPago);
+  if (isNaN(day) || day < 1 || day > 31) return null;
+
+  const { start, end } = getCycleDates(cycleMK);
+  const [startY, startM] = start.split("-").map(Number);
+  const [endY, endM] = end.split("-").map(Number);
+
+  // El ciclo abarca dos meses: del 27 del mes anterior al 26 del mes actual
+  // Si el día >= 27, cae en el primer mes del rango (mes anterior)
+  // Si el día <= 26, cae en el segundo mes del rango (mes actual)
+  let targetY, targetM;
+  if (day >= CYCLE_START_DAY) {
+    targetY = startY;
+    targetM = startM;
+  } else {
+    targetY = endY;
+    targetM = endM;
+  }
+
+  // Validar que el día existe en ese mes (ej: 31 de febrero → ajustar)
+  const lastDayOfMonth = new Date(targetY, targetM, 0).getDate();
+  const actualDay = Math.min(day, lastDayOfMonth);
+
+  return `${targetY}-${String(targetM).padStart(2, "0")}-${String(actualDay).padStart(2, "0")}`;
+}
+
 export {
   CYCLE_START_DAY,
   getCycleDates,
@@ -72,4 +104,5 @@ export {
   isDateInCycle,
   todayMK,
   formatMonthLabelWithCycle,
+  getRecurringPaymentDate,
 };
