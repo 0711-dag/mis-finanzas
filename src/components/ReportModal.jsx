@@ -28,6 +28,15 @@ export default function ReportModal({ data, filteredPayments, filteredIncomes, f
   const totalDebtPending = (data.debts || []).reduce((s, d) => s + (d.saldoPendiente || 0), 0);
   const reportBalance = totalIncomes - totalPayments - totalVarExpenses;
 
+  // Separar pagos: recurrentes (gasto fijo), cuotas de deuda, manuales
+  const recurringPayments = filteredPayments.filter((p) => p.fixedExpenseId);
+  const debtPayments = filteredPayments.filter((p) => p.debtId && !p.fixedExpenseId);
+  const manualPayments = filteredPayments.filter((p) => !p.debtId && !p.fixedExpenseId);
+
+  const totalRecurring = recurringPayments.reduce((s, p) => s + (p.monto || 0), 0);
+  const totalDebtPayments = debtPayments.reduce((s, p) => s + (p.monto || 0), 0);
+  const totalManual = manualPayments.reduce((s, p) => s + (p.monto || 0), 0);
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
@@ -54,17 +63,48 @@ export default function ReportModal({ data, filteredPayments, filteredIncomes, f
             color="#16a34a"
             items={filteredIncomes.map((i) => ({ name: i.concepto, amount: i.amount }))}
           />
+
+          {/* Gastos fijos recurrentes */}
           <ReportSection
-            title="📅 Pagos y Cuotas"
-            total={totalPayments}
+            title="🔄 Gastos Fijos Recurrentes"
+            total={totalRecurring}
+            color="#7c3aed"
+            items={recurringPayments.map((p) => ({
+              name: p.concepto.replace("🔄 ", ""),
+              amount: p.monto,
+              paid: p.estado === "PAGADO",
+            }))}
+            showStatus
+          />
+
+          {/* Cuotas de deuda */}
+          <ReportSection
+            title="📅 Cuotas de Deudas"
+            total={totalDebtPayments}
             color="#dc2626"
-            items={filteredPayments.map((p) => ({
+            items={debtPayments.map((p) => ({
               name: p.concepto + (p.cuotaNum ? ` (${p.cuotaNum}/${(data.debts || []).find((d) => d.id === p.debtId)?.totalCuotas || "?"})` : ""),
               amount: p.monto,
               paid: p.estado === "PAGADO",
             }))}
             showStatus
           />
+
+          {/* Pagos manuales */}
+          {manualPayments.length > 0 && (
+            <ReportSection
+              title="📝 Otros Pagos"
+              total={totalManual}
+              color="#dc2626"
+              items={manualPayments.map((p) => ({
+                name: p.concepto,
+                amount: p.monto,
+                paid: p.estado === "PAGADO",
+              }))}
+              showStatus
+            />
+          )}
+
           <ReportSection
             title="🛒 Gastos Variables"
             total={totalVarExpenses}
@@ -81,7 +121,9 @@ export default function ReportModal({ data, filteredPayments, filteredIncomes, f
               <tbody>
                 {[
                   { label: "Total Ingresos", val: totalIncomes, color: "#16a34a" },
-                  { label: "Total Pagos/Cuotas", val: -totalPayments, color: "#dc2626" },
+                  { label: "Gastos Fijos (recurrentes)", val: -totalRecurring, color: "#7c3aed" },
+                  { label: "Cuotas de Deudas", val: -totalDebtPayments, color: "#dc2626" },
+                  ...(totalManual > 0 ? [{ label: "Otros Pagos", val: -totalManual, color: "#dc2626" }] : []),
                   { label: "Total Gastos Variables", val: -totalVarExpenses, color: "#ea580c" },
                 ].map((r, i) => (
                   <tr key={i}>
