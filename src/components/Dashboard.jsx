@@ -5,6 +5,7 @@ import useAutoLogout from "../hooks/useAutoLogout.js";
 import { fmt, formatMonthLabel, MS } from "../utils/format.js";
 import { todayMK, getCycleDates, dateToFinancialMonth, formatMonthLabelWithCycle, CYCLE_START_DAY } from "../utils/cycle.js";
 import ValidationToast from "./shared/ValidationToast.jsx";
+import SyncIndicator from "./shared/SyncIndicator.jsx";
 import DebtTable from "./DebtTable.jsx";
 import FixedExpenses from "./FixedExpenses.jsx";
 import IncomeTable from "./IncomeTable.jsx";
@@ -127,13 +128,7 @@ export default function Dashboard({ user }) {
       <header className="header">
         <div className="header-left">
           <h1 className="header-title">💰 Control Financiero Familiar</h1>
-          <span className={`sync-badge ${syncing ? "sync-badge--saving" : online ? "sync-badge--online" : "sync-badge--offline"}`}>
-            {syncing
-              ? "⏳ Guardando..."
-              : online
-                ? `☁️ ${lastSyncTime ? lastSyncTime.toLocaleString("es-ES", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "Sincronizado"}`
-                : "⚠️ Sin conexión"}
-          </span>
+          <SyncIndicator syncing={syncing} online={online} lastSyncTime={lastSyncTime} />
         </div>
         <div className="header-right">
           <button className="btn-report" onClick={() => setShowReport(true)}>📊 Informe</button>
