@@ -34,9 +34,6 @@ export default function Dashboard({ user }) {
 
   // ══════════════════════════════════════════════
   // 🔄 AUTO-GENERAR PAGOS RECURRENTES
-  // Se ejecuta cuando:
-  //   - Se cargan los datos por primera vez
-  //   - Se cambia el mes seleccionado
   // ══════════════════════════════════════════════
   useEffect(() => {
     if (!data || loading) return;
@@ -53,6 +50,11 @@ export default function Dashboard({ user }) {
 
   const handleLogout = async () => {
     try { await signOut(auth); } catch (e) { console.error("Logout error:", e); }
+  };
+
+  const handleResetClick = () => {
+    setShowUserMenu(false);
+    setShowResetModal(true);
   };
 
   /* ── Loading state ── */
@@ -156,7 +158,6 @@ export default function Dashboard({ user }) {
               );
             })}
           </select>
-          <button className="btn-reset" onClick={() => setShowResetModal(true)} title="Borrar todo">🗑️</button>
 
           {/* User Avatar */}
           <div style={{ position: "relative" }}>
@@ -171,7 +172,18 @@ export default function Dashboard({ user }) {
                   <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}>🔒 Sesión se cierra tras 30 min inactivo</div>
                   <div style={{ fontSize: 10, color: "#6366f1", marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}>📅 Ciclo financiero: día {CYCLE_START_DAY} → día {CYCLE_START_DAY - 1}</div>
                 </div>
-                <button className="user-menu__logout" onClick={handleLogout}>🚪 Cerrar sesión</button>
+
+                {/* Sección: Sesión */}
+                <button className="user-menu__item" onClick={handleLogout}>
+                  🚪 Cerrar sesión
+                </button>
+
+                {/* Separador + Zona peligrosa */}
+                <div className="user-menu__divider" />
+                <div className="user-menu__danger-label">Zona peligrosa</div>
+                <button className="user-menu__item user-menu__item--danger" onClick={handleResetClick}>
+                  🗑️ Restablecer cuenta
+                </button>
               </div>
             )}
           </div>
@@ -262,12 +274,12 @@ export default function Dashboard({ user }) {
         <div className="modal-overlay modal-overlay--dark" onClick={() => setShowResetModal(false)}>
           <div className="modal-card--small" onClick={(e) => e.stopPropagation()}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
-            <h3 style={{ fontSize: 18, fontWeight: 700, color: "#1f2937", marginBottom: 8 }}>¿Borrar TODOS los datos?</h3>
+            <h3 style={{ fontSize: 18, fontWeight: 700, color: "#1f2937", marginBottom: 8 }}>¿Restablecer cuenta?</h3>
             <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 6, lineHeight: 1.5 }}>Se eliminarán todas tus deudas, pagos, ingresos y gastos.</p>
             <p style={{ fontSize: 13, color: "#dc2626", fontWeight: 700, marginBottom: 22 }}>Esta acción NO se puede deshacer.</p>
             <div style={{ display: "flex", gap: 10 }}>
               <button onClick={() => setShowResetModal(false)} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", fontSize: 13, fontWeight: 600, color: "#374151" }}>Cancelar</button>
-              <button onClick={() => { resetAll(); setShowResetModal(false); }} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#dc2626", fontSize: 13, fontWeight: 700, color: "#fff" }}>🗑️ Sí, borrar todo</button>
+              <button onClick={() => { resetAll(); setShowResetModal(false); }} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#dc2626", fontSize: 13, fontWeight: 700, color: "#fff" }}>🗑️ Sí, restablecer</button>
             </div>
           </div>
         </div>
