@@ -2,7 +2,17 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- ✅ viewport-fit=cover → habilita env(safe-area-inset-*) en iOS/Android -->
+    <!-- ✅ maximum-scale=1 → evita zoom automático al tocar inputs (causa "salto" inicial) -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover"
+    />
+    <!-- ✅ theme-color → la barra superior del navegador combina con la app desde el primer frame -->
+    <meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
+    <!-- ✅ evita el "flash blanco" al cargar en oscuro -->
+    <meta name="color-scheme" content="light dark" />
     <title>Finanzas Familiares</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💰</text></svg>">
   </head>
