@@ -4,7 +4,7 @@ import ActionButtons from "./shared/ActionButtons.jsx";
 import { fmt, fmtDate, todayISO, formatMonthLabel } from "../utils/format.js";
 import { dateToFinancialMonth } from "../utils/cycle.js";
 
-export default function IncomeTable({ filteredIncomes, addRow, deleteRow, saveRowEdit, selectedMonth, setAddingTo, addingTo }) {
+export default function IncomeTable({ filteredIncomes, addRow, deleteRow, saveRowEdit, selectedMonth, setAddingTo, addingTo, mobileMode }) {
   const [newRow, setNewRow] = useState({});
   const [editingRow, setEditingRow] = useState(null);
 
@@ -37,59 +37,98 @@ export default function IncomeTable({ filteredIncomes, addRow, deleteRow, saveRo
     if (success) setAddingTo(null);
   };
 
-  return (
-    <Section title={`💰 Ingresos — ${formatMonthLabel(selectedMonth)}`} onAdd={handleAdd}>
-      <div style={{ overflowX: "auto" }}>
-        <table>
-          <thead>
-            <tr><th>Concepto</th><th>Monto</th><th>Fecha</th><th style={{ width: 70 }}></th></tr>
-          </thead>
-          <tbody>
-            {filteredIncomes.map((i) => {
-              const re = isRowEditing(i.id);
-              return (
-                <tr key={i.id} className={re ? "row-editing" : ""}>
-                  <td>{re ? <input className="row-input" value={rowField("concepto")} onChange={(e) => setRowField("concepto", e.target.value)} maxLength={100} /> : i.concepto}</td>
-                  <td className="mono" style={{ fontWeight: 600, color: "#16a34a" }}>
-                    {re ? <input className="row-input" type="number" value={rowField("amount")} onChange={(e) => setRowField("amount", parseFloat(e.target.value) || 0)} /> : fmt(i.amount)}
-                  </td>
-                  <td>{re ? <input className="row-input" type="date" value={rowField("fecha")} onChange={(e) => setRowField("fecha", e.target.value)} /> : fmtDate(i.fecha)}</td>
-                  <td>
-                    <ActionButtons
-                      section="incomes" id={i.id} item={i}
-                      isEditing={re}
-                      onStartEdit={startRowEdit}
-                      onSaveEdit={handleSaveRowEdit}
-                      onCancelEdit={cancelRowEdit}
-                      onDelete={() => deleteRow("incomes", i.id)}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-            {addingTo === "incomes" && (
-              <tr className="row-adding">
-                <td><input className="row-input" placeholder="Concepto" value={newRow.concepto || ""} onChange={(e) => setNewRow({ ...newRow, concepto: e.target.value })} maxLength={100} /></td>
-                <td><input className="row-input" type="number" placeholder="0" value={newRow.amount || ""} onChange={(e) => setNewRow({ ...newRow, amount: e.target.value })} min="0" max="99999999" /></td>
-                <td><input className="row-input" type="date" value={newRow.fecha || ""} onChange={(e) => setNewRow({ ...newRow, fecha: e.target.value })} /></td>
-                <td><button className="btn-ok" onClick={handleSaveNew}>✓</button></td>
-              </tr>
-            )}
-            {filteredIncomes.length === 0 && addingTo !== "incomes" && (
-              <tr><td colSpan={4} className="empty-row">Sin ingresos este ciclo</td></tr>
-            )}
-          </tbody>
-          {filteredIncomes.length > 0 && (
-            <tfoot>
-              <tr className="footer-total--income" style={{ fontWeight: 700 }}>
-                <td style={{ textAlign: "right" }}>TOTAL</td>
-                <td className="mono" style={{ color: "#16a34a" }}>{fmt(total)}</td>
-                <td colSpan={2}></td>
-              </tr>
-            </tfoot>
-          )}
-        </table>
+  const AddForm = (
+    <div style={{
+      background: "var(--bg-subtle)",
+      borderRadius: "var(--radius-md)",
+      padding: 14, marginBottom: 10,
+      border: "1.5px solid var(--accent)",
+    }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)", marginBottom: 10 }}>
+        Nuevo ingreso
       </div>
+      <input className="sheet-input" placeholder="Concepto (ej: Nómina)" value={newRow.concepto || ""} onChange={(e) => setNewRow({ ...newRow, concepto: e.target.value })} maxLength={100} />
+      <div style={{ display: "flex", gap: 6 }}>
+        <input className="sheet-input" type="number" placeholder="Monto €" value={newRow.amount || ""} onChange={(e) => setNewRow({ ...newRow, amount: e.target.value })} style={{ flex: 1 }} />
+        <input className="sheet-input" type="date" value={newRow.fecha || ""} onChange={(e) => setNewRow({ ...newRow, fecha: e.target.value })} style={{ flex: 1, colorScheme: "light dark" }} />
+      </div>
+      <button className="btn-primary btn-primary--accent" onClick={handleSaveNew} style={{ marginTop: 4 }}>
+        Añadir ingreso
+      </button>
+    </div>
+  );
+
+  return (
+    <Section title={`Ingresos · ${formatMonthLabel(selectedMonth)}`} icon="💰" onAdd={handleAdd} mobileMode={mobileMode}>
+      {addingTo === "incomes" && AddForm}
+
+      <div className="item-list">
+        {filteredIncomes.map((i) => {
+          const re = isRowEditing(i.id);
+
+          if (re) {
+            return (
+              <div key={i.id} style={{
+                background: "var(--bg-subtle)", borderRadius: "var(--radius-md)",
+                padding: 12, border: "1.5px solid var(--accent)",
+                display: "flex", flexDirection: "column", gap: 6,
+              }}>
+                <input className="sheet-input" value={rowField("concepto")} onChange={(e) => setRowField("concepto", e.target.value)} maxLength={100} />
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input className="sheet-input" type="number" value={rowField("amount")} onChange={(e) => setRowField("amount", parseFloat(e.target.value) || 0)} style={{ flex: 1 }} />
+                  <input className="sheet-input" type="date" value={rowField("fecha")} onChange={(e) => setRowField("fecha", e.target.value)} style={{ flex: 1, colorScheme: "light dark" }} />
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button className="btn-primary btn-primary--accent" onClick={handleSaveRowEdit} style={{ flex: 1 }}>Guardar</button>
+                  <button className="btn-secondary" onClick={cancelRowEdit}>Cancelar</button>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div key={i.id} className="item">
+              <div className="item__icon item__icon--income">💰</div>
+              <div className="item__body">
+                <div className="item__title">{i.concepto}</div>
+                <div className="item__subtitle">{fmtDate(i.fecha)}</div>
+              </div>
+              <div className="item__right">
+                <div className="item__amount item__amount--pos">+{fmt(i.amount).replace("−", "").replace("-", "")}</div>
+                <div style={{ display: "flex", gap: 2, marginTop: 4, justifyContent: "flex-end" }}>
+                  <ActionButtons
+                    section="incomes" id={i.id} item={i}
+                    isEditing={false}
+                    onStartEdit={startRowEdit}
+                    onSaveEdit={handleSaveRowEdit}
+                    onCancelEdit={cancelRowEdit}
+                    onDelete={() => deleteRow("incomes", i.id)}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {filteredIncomes.length === 0 && addingTo !== "incomes" && (
+          <div className="empty">
+            <div className="empty__emoji">💰</div>
+            <div className="empty__title">Sin ingresos este ciclo</div>
+            <div className="empty__subtitle">Añade tu nómina o ingresos extra</div>
+          </div>
+        )}
+      </div>
+
+      {filteredIncomes.length > 0 && (
+        <div style={{
+          padding: "10px 14px", marginTop: 6,
+          background: "var(--success-bg)", borderRadius: "var(--radius-md)",
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+        }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--success-text)", textTransform: "uppercase", letterSpacing: 0.5 }}>Total</span>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--success)" }}>{fmt(total)}</div>
+        </div>
+      )}
     </Section>
   );
 }
