@@ -4,19 +4,26 @@ import { formatMonthLabelWithCycle } from "../utils/cycle.js";
 function ReportSection({ title, total, color, items, showStatus }) {
   if (!items || items.length === 0) return null;
   return (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: "#374151" }}>{title}</span>
-        <span className="mono" style={{ fontSize: 14, fontWeight: 700, color }}>{fmt(total)}</span>
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: 0.5 }}>{title}</span>
+        <span style={{ fontSize: 14, fontWeight: 700, color, fontFeatureSettings: "'tnum'" }}>{fmt(total)}</span>
       </div>
-      {items.map((it, i) => (
-        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 8px", borderRadius: 4, background: i % 2 === 0 ? "#f9fafb" : "transparent" }}>
-          <span style={{ fontSize: 12, color: "#4b5563", flex: 1 }}>
-            {showStatus && it.paid !== undefined && (it.paid ? "✅ " : "⏳ ")}{it.name}
-          </span>
-          <span className="mono" style={{ fontSize: 12, fontWeight: 500, color }}>{fmt(it.amount)}</span>
-        </div>
-      ))}
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {items.map((it, i) => (
+          <div key={i} style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "6px 10px", borderRadius: "var(--radius-sm)",
+            background: i % 2 === 0 ? "var(--bg-subtle)" : "transparent",
+            fontSize: 12,
+          }}>
+            <span style={{ color: "var(--text-primary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {showStatus && it.paid !== undefined && (it.paid ? "✓ " : "⏳ ")}{it.name}
+            </span>
+            <span style={{ fontWeight: 600, color, fontFeatureSettings: "'tnum'" }}>{fmt(it.amount)}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -28,7 +35,6 @@ export default function ReportModal({ data, filteredPayments, filteredIncomes, f
   const totalDebtPending = (data.debts || []).reduce((s, d) => s + (d.saldoPendiente || 0), 0);
   const reportBalance = totalIncomes - totalPayments - totalVarExpenses;
 
-  // Separar pagos: recurrentes (gasto fijo), cuotas de deuda, manuales
   const recurringPayments = filteredPayments.filter((p) => p.fixedExpenseId);
   const debtPayments = filteredPayments.filter((p) => p.debtId && !p.fixedExpenseId);
   const manualPayments = filteredPayments.filter((p) => !p.debtId && !p.fixedExpenseId);
@@ -38,37 +44,52 @@ export default function ReportModal({ data, filteredPayments, filteredIncomes, f
   const totalManual = manualPayments.reduce((s, p) => s + (p.monto || 0), 0);
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="report-header">
-          <h2 style={{ fontSize: 16, fontWeight: 700 }}>📊 Informe — {formatMonthLabelWithCycle(selectedMonth)}</h2>
-          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, color: "#9ca3af", cursor: "pointer" }}>✕</button>
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal__header">
+          <div>
+            <h2 className="modal__title">Informe del ciclo</h2>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500, marginTop: 2 }}>
+              {formatMonthLabelWithCycle(selectedMonth)}
+            </div>
+          </div>
+          <button className="modal__close" onClick={onClose}>✕</button>
         </div>
 
-        <div className="report-body">
-          {/* Balance principal */}
-          <div style={{ textAlign: "center", padding: "16px 0 20px", borderBottom: "1px solid #e5e7eb", marginBottom: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5 }}>Balance del ciclo</div>
-            <div className="mono" style={{ fontSize: 32, fontWeight: 700, color: reportBalance >= 0 ? "#16a34a" : "#dc2626", marginTop: 4 }}>{fmt(reportBalance)}</div>
-            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+        <div className="modal__body">
+          {/* Hero balance */}
+          <div style={{
+            textAlign: "center", padding: "10px 0 22px",
+            borderBottom: "1px solid var(--border-subtle)",
+            marginBottom: 20,
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: 0.5 }}>
+              Balance del ciclo
+            </div>
+            <div style={{
+              fontSize: 40, fontWeight: 800, letterSpacing: "-0.04em",
+              color: reportBalance >= 0 ? "var(--success)" : "var(--danger)",
+              marginTop: 6, lineHeight: 1,
+              fontFeatureSettings: "'tnum'",
+            }}>
+              {fmt(reportBalance)}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 8 }}>
               {reportBalance >= 0 ? "Te sobra dinero este ciclo 👍" : "Gastas más de lo que ingresas ⚠️"}
             </div>
           </div>
 
-          {/* Secciones detalladas */}
           <ReportSection
-            title="💰 Ingresos"
+            title="Ingresos"
             total={totalIncomes}
-            color="#16a34a"
+            color="var(--success)"
             items={filteredIncomes.map((i) => ({ name: i.concepto, amount: i.amount }))}
           />
 
-          {/* Gastos fijos recurrentes */}
           <ReportSection
-            title="🔄 Gastos Fijos Recurrentes"
+            title="🔄 Gastos fijos recurrentes"
             total={totalRecurring}
-            color="#7c3aed"
+            color="var(--category-recurring)"
             items={recurringPayments.map((p) => ({
               name: p.concepto.replace("🔄 ", ""),
               amount: p.monto,
@@ -77,11 +98,10 @@ export default function ReportModal({ data, filteredPayments, filteredIncomes, f
             showStatus
           />
 
-          {/* Cuotas de deuda */}
           <ReportSection
-            title="📅 Cuotas de Deudas"
+            title="💳 Cuotas de deudas"
             total={totalDebtPayments}
-            color="#dc2626"
+            color="var(--category-debt)"
             items={debtPayments.map((p) => ({
               name: p.concepto + (p.cuotaNum ? ` (${p.cuotaNum}/${(data.debts || []).find((d) => d.id === p.debtId)?.totalCuotas || "?"})` : ""),
               amount: p.monto,
@@ -90,12 +110,11 @@ export default function ReportModal({ data, filteredPayments, filteredIncomes, f
             showStatus
           />
 
-          {/* Pagos manuales */}
           {manualPayments.length > 0 && (
             <ReportSection
-              title="📝 Otros Pagos"
+              title="Otros pagos"
               total={totalManual}
-              color="#dc2626"
+              color="var(--danger)"
               items={manualPayments.map((p) => ({
                 name: p.concepto,
                 amount: p.monto,
@@ -106,45 +125,63 @@ export default function ReportModal({ data, filteredPayments, filteredIncomes, f
           )}
 
           <ReportSection
-            title="🛒 Gastos Variables"
+            title="🛒 Gastos variables"
             total={totalVarExpenses}
-            color="#ea580c"
+            color="var(--category-expense)"
             items={filteredVarExpenses.map((v) => ({
               name: (v.categoria ? v.categoria + " " : "") + v.concepto,
               amount: v.monto,
             }))}
           />
 
-          {/* Tabla resumen */}
-          <div style={{ background: "#f8fafc", borderRadius: 8, padding: 14, marginTop: 16 }}>
-            <table style={{ width: "100%", border: "none" }}>
-              <tbody>
-                {[
-                  { label: "Total Ingresos", val: totalIncomes, color: "#16a34a" },
-                  { label: "Gastos Fijos (recurrentes)", val: -totalRecurring, color: "#7c3aed" },
-                  { label: "Cuotas de Deudas", val: -totalDebtPayments, color: "#dc2626" },
-                  ...(totalManual > 0 ? [{ label: "Otros Pagos", val: -totalManual, color: "#dc2626" }] : []),
-                  { label: "Total Gastos Variables", val: -totalVarExpenses, color: "#ea580c" },
-                ].map((r, i) => (
-                  <tr key={i}>
-                    <td style={{ border: "none", padding: "3px 0", fontSize: 13, color: "#4b5563" }}>{r.label}</td>
-                    <td className="mono" style={{ border: "none", padding: "3px 0", textAlign: "right", fontSize: 13, fontWeight: 500, color: r.color }}>{fmt(r.val)}</td>
-                  </tr>
-                ))}
-                <tr><td colSpan={2} style={{ border: "none", borderTop: "2px solid #d1d5db", padding: 0 }}></td></tr>
-                <tr>
-                  <td style={{ border: "none", padding: "6px 0 0", fontSize: 14, fontWeight: 700 }}>= Balance</td>
-                  <td className="mono" style={{ border: "none", padding: "6px 0 0", textAlign: "right", fontSize: 16, fontWeight: 700, color: reportBalance >= 0 ? "#16a34a" : "#dc2626" }}>{fmt(reportBalance)}</td>
-                </tr>
-              </tbody>
-            </table>
+          {/* Resumen final */}
+          <div style={{
+            background: "var(--bg-subtle)", borderRadius: "var(--radius-md)",
+            padding: 14, marginTop: 18,
+          }}>
+            {[
+              { label: "Total ingresos", val: totalIncomes, color: "var(--success)", sign: "+" },
+              { label: "Recurrentes", val: totalRecurring, color: "var(--category-recurring)", sign: "−" },
+              { label: "Cuotas deudas", val: totalDebtPayments, color: "var(--category-debt)", sign: "−" },
+              ...(totalManual > 0 ? [{ label: "Otros pagos", val: totalManual, color: "var(--danger)", sign: "−" }] : []),
+              { label: "Gastos variables", val: totalVarExpenses, color: "var(--category-expense)", sign: "−" },
+            ].map((r, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}>
+                <span style={{ color: "var(--text-secondary)" }}>{r.label}</span>
+                <span style={{ fontWeight: 600, color: r.color, fontFeatureSettings: "'tnum'" }}>
+                  {r.sign}{fmt(r.val).replace("−", "").replace("-", "")}
+                </span>
+              </div>
+            ))}
+            <div style={{ borderTop: "2px solid var(--border-strong)", marginTop: 8, paddingTop: 8, display: "flex", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 14, fontWeight: 800 }}>Balance</span>
+              <span style={{
+                fontSize: 16, fontWeight: 800,
+                color: reportBalance >= 0 ? "var(--success)" : "var(--danger)",
+                fontFeatureSettings: "'tnum'",
+              }}>
+                {fmt(reportBalance)}
+              </span>
+            </div>
           </div>
 
           {/* Deuda total */}
-          <div style={{ marginTop: 16, padding: 12, background: "#faf5ff", borderRadius: 8, border: "1px solid #e9d5ff" }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#7c3aed", textTransform: "uppercase", letterSpacing: 0.4 }}>Deuda total pendiente</div>
-            <div className="mono" style={{ fontSize: 22, fontWeight: 700, color: "#7c3aed", marginTop: 2 }}>{fmt(totalDebtPending)}</div>
-            <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+          <div style={{
+            marginTop: 16, padding: 14,
+            background: "var(--category-debt-bg)",
+            borderRadius: "var(--radius-md)",
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--category-debt)", textTransform: "uppercase", letterSpacing: 0.5 }}>
+              Deuda total pendiente
+            </div>
+            <div style={{
+              fontSize: 24, fontWeight: 800, color: "var(--category-debt)",
+              marginTop: 4, letterSpacing: "-0.02em",
+              fontFeatureSettings: "'tnum'",
+            }}>
+              {fmt(totalDebtPending)}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 6 }}>
               {(data.debts || []).filter((d) => (d.cuotaActual || 0) >= (d.totalCuotas || 1)).length} de {(data.debts || []).length} deudas completadas
             </div>
           </div>
