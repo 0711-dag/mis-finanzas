@@ -11,9 +11,17 @@
   padding: 0;
 }
 
+/* ✅ FIX viewport móvil — raíz estable desde el primer frame
+   - overflow-x: hidden → evita scroll horizontal global (arregla "cortado a la derecha")
+   - height 100% + dvh → pantalla completa sin que la barra del navegador cause "salto" al cargar
+   - overscroll-behavior-y: none → evita el "tirón" elástico al final de la página que aparenta carga lenta */
 html {
   -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
+  overflow-x: hidden;
+  overscroll-behavior-y: none;
+  /* Altura dinámica — ignora la aparición/desaparición de la barra del navegador */
+  height: 100%;
 }
 
 body {
@@ -24,17 +32,50 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition: background 0.08s ease;
+  /* ✅ Misma protección en body */
+  overflow-x: hidden;
+  min-height: 100%;
+  min-height: 100dvh;
+  /* ✅ Soporte safe-area para notch / barra inferior del sistema */
+  padding-left: env(safe-area-inset-left, 0);
+  padding-right: env(safe-area-inset-right, 0);
+}
+
+/* ✅ El contenedor raíz también debe contenerse */
+#root {
+  width: 100%;
+  min-height: 100%;
+  min-height: 100dvh;
+  overflow-x: hidden;
 }
 
 input, select, button, textarea {
   font-family: inherit;
   font-feature-settings: inherit;
+  /* ✅ Evita overflow causado por inputs con min-width nativo (date/number) */
+  max-width: 100%;
+}
+
+/* ✅ Inputs de tipo date/number/text dentro de flex row → no empujan el contenedor */
+input[type="date"],
+input[type="number"],
+input[type="text"],
+input[type="email"],
+input[type="password"],
+select {
+  min-width: 0;
 }
 
 button {
   cursor: pointer;
   border: none;
   background: none;
+}
+
+/* ✅ Imágenes y SVG responsivos por defecto */
+img, svg, video {
+  max-width: 100%;
+  height: auto;
 }
 
 /* ══════════════════════════════════════════════
@@ -201,18 +242,31 @@ button {
    LAYOUT APP
    ══════════════════════════════════════════════ */
 .app-shell {
+  /* ✅ 100dvh = altura dinámica real del viewport (arregla barra inferior solapada en móvil) */
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--bg-page);
   color: var(--text-primary);
   display: flex;
   flex-direction: column;
+  /* ✅ Prevención extra de scroll horizontal dentro de la app */
+  overflow-x: hidden;
+  width: 100%;
 }
 
 /* Móvil: solo un contenedor que ocupa todo */
 .app-mobile {
-  padding: 16px 16px 90px;
+  /* ✅ Padding top respeta el notch superior
+     ✅ Padding bottom: 90px (tab bar) + safe area inferior */
+  padding:
+    calc(16px + env(safe-area-inset-top, 0px))
+    16px
+    calc(90px + env(safe-area-inset-bottom, 0px));
   max-width: 520px;
   margin: 0 auto;
+  width: 100%;
+  /* ✅ Nunca permitir scroll horizontal en la vista móvil */
+  overflow-x: hidden;
 }
 
 /* Escritorio: grid con sidebar */
@@ -220,12 +274,16 @@ button {
   display: grid;
   grid-template-columns: 240px 1fr;
   min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
 }
 
 .app-desktop__main {
   padding: 24px 32px;
   max-width: 1400px;
   overflow-x: hidden;
+  /* ✅ Necesario para que grid interno no desborde */
+  min-width: 0;
 }
 
 /* ══════════════════════════════════════════════
@@ -237,6 +295,13 @@ button {
   align-items: flex-start;
   padding: 4px 0 16px;
   margin-bottom: 4px;
+  /* ✅ Permitir que el título se trunque si es necesario */
+  gap: 12px;
+}
+
+.m-header > div:first-child {
+  min-width: 0;
+  flex: 1;
 }
 
 .m-header__title {
@@ -252,6 +317,10 @@ button {
   color: var(--text-secondary);
   font-weight: 500;
   margin-top: 2px;
+  /* ✅ Trunca si es muy largo en móviles pequeños */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .m-avatar {
@@ -268,6 +337,7 @@ button {
   color: var(--text-primary);
   overflow: hidden;
   transition: background var(--anim-fast);
+  flex-shrink: 0;
 }
 
 .m-avatar:active {
@@ -308,6 +378,8 @@ button {
   line-height: 1.05;
   margin-top: 6px;
   font-feature-settings: 'tnum';
+  /* ✅ Si el balance es muy grande, que no rompa el layout */
+  word-break: break-word;
 }
 
 .hero-balance__currency {
@@ -349,6 +421,9 @@ button {
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
   padding: 14px;
+  /* ✅ Evita que el contenido desborde la card */
+  min-width: 0;
+  overflow: hidden;
 }
 
 .stat-card__label {
@@ -366,6 +441,10 @@ button {
   color: var(--text-primary);
   margin-top: 4px;
   font-feature-settings: 'tnum';
+  /* ✅ Si el número es muy grande, trunca con ellipsis */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stat-card__value--success { color: var(--success); }
@@ -382,6 +461,7 @@ button {
   justify-content: space-between;
   align-items: center;
   padding: 16px 4px 10px;
+  gap: 8px;
 }
 
 .section-header__title {
@@ -390,6 +470,10 @@ button {
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  /* ✅ Evita que el título empuje el botón fuera */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .section-header__action {
@@ -399,6 +483,7 @@ button {
   padding: 4px 10px;
   border-radius: var(--radius-sm);
   transition: background var(--anim-fast);
+  flex-shrink: 0;
 }
 
 .section-header__action:active {
@@ -412,6 +497,9 @@ button {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* ✅ Garantiza que la lista nunca cause overflow horizontal */
+  min-width: 0;
+  width: 100%;
 }
 
 .item {
@@ -423,6 +511,8 @@ button {
   align-items: center;
   gap: 12px;
   transition: border-color var(--anim-fast), background var(--anim-fast);
+  /* ✅ Evita que ítems con textos largos desborden */
+  min-width: 0;
 }
 
 .item:active {
@@ -464,11 +554,17 @@ button {
   font-size: 11px;
   color: var(--text-secondary);
   margin-top: 2px;
+  /* ✅ Trunca subtítulos largos */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .item__right {
   text-align: right;
   flex-shrink: 0;
+  /* ✅ Limita el ancho para que el monto no empuje fuera */
+  max-width: 40%;
 }
 
 .item__amount {
@@ -477,6 +573,7 @@ button {
   color: var(--text-primary);
   font-feature-settings: 'tnum';
   letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
 .item__amount--neg { color: var(--danger); }
@@ -533,7 +630,10 @@ button {
   right: 0;
   background: var(--bg-elevated);
   border-top: 1px solid var(--border-subtle);
+  /* ✅ Respeta safe-area inferior de iOS/Android (gesture bar) */
   padding: 8px 4px calc(10px + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(4px + env(safe-area-inset-left, 0px));
+  padding-right: calc(4px + env(safe-area-inset-right, 0px));
   display: flex;
   justify-content: space-around;
   align-items: center;
@@ -627,7 +727,9 @@ button {
   z-index: 110;
   animation: sheetUp 0.18s cubic-bezier(0.32, 0.72, 0, 1);
   max-height: 88vh;
+  max-height: 88dvh;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .sheet__handle {
@@ -706,6 +808,9 @@ button {
   outline: none;
   transition: border-color var(--anim-fast), background var(--anim-fast);
   margin-bottom: 10px;
+  /* ✅ min-width: 0 + max-width: 100% para que flex: 1 funcione sin desbordar */
+  min-width: 0;
+  max-width: 100%;
 }
 
 .sheet-input:focus {
@@ -742,6 +847,7 @@ button {
   white-space: nowrap;
   transition: all var(--anim-fast);
   border: 1.5px solid transparent;
+  flex-shrink: 0;
 }
 
 .date-chip--active {
@@ -877,6 +983,7 @@ button {
   position: sticky;
   top: 0;
   height: 100vh;
+  height: 100dvh;
   overflow-y: auto;
 }
 
@@ -985,6 +1092,8 @@ button {
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid var(--border-subtle);
+  gap: 8px;
+  min-width: 0;
 }
 
 .panel__title {
@@ -995,6 +1104,10 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .panel__body {
@@ -1094,6 +1207,7 @@ button {
    ══════════════════════════════════════════════ */
 .spinner-page {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1145,6 +1259,7 @@ button {
   color: var(--text-primary);
   outline: none;
   font-feature-settings: inherit;
+  min-width: 0;
 }
 
 .edit-icon {
@@ -1214,7 +1329,9 @@ button {
   max-width: 520px;
   width: 100%;
   max-height: 88vh;
+  max-height: 88dvh;
   overflow-y: auto;
+  overflow-x: hidden;
   border: 1px solid var(--border-subtle);
   animation: sheetUp 0.18s cubic-bezier(0.32, 0.72, 0, 1);
 }
@@ -1268,6 +1385,8 @@ button {
   border: 1px solid var(--border-default);
   box-shadow: var(--shadow-lg);
   min-width: 240px;
+  /* ✅ Evita que el menú se salga de la pantalla en móviles pequeños */
+  max-width: calc(100vw - 32px);
   z-index: 100;
   padding: 6px;
   animation: fadeInUp 0.1s ease;
@@ -1366,11 +1485,15 @@ button {
    ══════════════════════════════════════════════ */
 .login-page {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--bg-page);
-  padding: 16px;
+  padding:
+    calc(16px + env(safe-area-inset-top, 0px))
+    16px
+    calc(16px + env(safe-area-inset-bottom, 0px));
 }
 
 .login-card {
