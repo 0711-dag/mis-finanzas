@@ -1,18 +1,11 @@
 import { useState, useEffect } from "react";
 
 export default function ActionButtons({
-  section,
-  id,
-  item,
-  isEditing,
-  onStartEdit,
-  onSaveEdit,
-  onCancelEdit,
-  onDelete,
+  section, id, item, isEditing,
+  onStartEdit, onSaveEdit, onCancelEdit, onDelete,
 }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  // Auto-cancel confirm after 3s
   useEffect(() => {
     if (!confirmingDelete) return;
     const t = setTimeout(() => setConfirmingDelete(false), 3000);
@@ -22,8 +15,8 @@ export default function ActionButtons({
   if (isEditing) {
     return (
       <div style={{ display: "flex", gap: 3 }}>
-        <button className="btn-save-row" onClick={onSaveEdit} title="Guardar">✓</button>
-        <button className="btn-cancel-row" onClick={onCancelEdit} title="Cancelar">✕</button>
+        <button className="edit-icon edit-icon--save" onClick={onSaveEdit} title="Guardar">✓</button>
+        <button className="edit-icon edit-icon--cancel" onClick={onCancelEdit} title="Cancelar">✕</button>
       </div>
     );
   }
@@ -40,18 +33,16 @@ export default function ActionButtons({
   return (
     <div style={{ display: "flex", gap: 3 }}>
       <button
-        className="btn-edit-row"
+        className="edit-icon"
         onClick={() => onStartEdit(section, item)}
         title="Modificar"
-      >
-        ✏️
-      </button>
+      >✏️</button>
       <button
-        className={`btn-delete ${confirmingDelete ? "btn-delete--active" : ""}`}
+        className={confirmingDelete ? "edit-icon edit-icon--confirm" : "edit-icon edit-icon--delete"}
         onClick={handleDelete}
         title={confirmingDelete ? "Pulsa otra vez para confirmar" : "Eliminar"}
       >
-        {confirmingDelete ? "¿Seguro?" : "✕"}
+        {confirmingDelete ? "¿?" : "✕"}
       </button>
     </div>
   );
