@@ -11,7 +11,7 @@ export default function CellInput({ value, onChange, onConfirm, onCancel, field 
         if (e.key === "Enter") { e.preventDefault(); onConfirm(); }
         if (e.key === "Escape") onCancel();
       }}
-      className="cell-input"
+      className="inline-input"
     />
   );
 }
