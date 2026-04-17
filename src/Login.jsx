@@ -8,7 +8,7 @@ import {
   updateProfile,
 } from "./firebase.js";
 
-export default function Login() {
+export default function Login({ theme, toggleTheme }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -40,9 +40,7 @@ export default function Login() {
     try {
       if (mode === "register") {
         const cred = await createUserWithEmailAndPassword(auth, email, password);
-        if (name.trim()) {
-          await updateProfile(cred.user, { displayName: name.trim() });
-        }
+        if (name.trim()) await updateProfile(cred.user, { displayName: name.trim() });
       } else {
         await signInWithEmailAndPassword(auth, email, password);
       }
@@ -58,64 +56,102 @@ export default function Login() {
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (err) {
-      if (err.code !== "auth/popup-closed-by-user") {
-        setError(getErrorMsg(err.code));
-      }
+      if (err.code !== "auth/popup-closed-by-user") setError(getErrorMsg(err.code));
     }
     setLoading(false);
   };
 
   return (
-    <div style={S.page}>
-      <div style={S.bgCircle1} />
-      <div style={S.bgCircle2} />
+    <div className="login-page">
+      {/* Toggle tema, esquina sup. derecha */}
+      <button
+        className="btn-ghost"
+        onClick={toggleTheme}
+        style={{ position: "absolute", top: 16, right: 16 }}
+        title={`Cambiar a modo ${theme === "light" ? "oscuro" : "claro"}`}
+      >
+        {theme === "light" ? "🌙" : "☀️"}
+      </button>
 
-      <div style={S.card}>
-        <div style={{ textAlign: "center", marginBottom: 22 }}>
-          <span style={{ fontSize: 42, display: "block", marginBottom: 6, animation: "float 3s ease-in-out infinite" }}>💰</span>
-          <h1 style={{ fontSize: 21, fontWeight: 800, color: "#1f2937", letterSpacing: -0.5, lineHeight: 1.2 }}>Control Financiero</h1>
-          <p style={{ fontSize: 13, color: "#6b7280", fontWeight: 500, marginTop: 3 }}>Tu economía familiar, bajo control</p>
+      <div className="login-card">
+        <div className="login-logo">💰</div>
+        <h1 className="login-title">Finanzas Familiares</h1>
+        <p className="login-subtitle">Tu economía, bajo control</p>
+
+        <div className="login-tabs">
+          <button
+            className={`login-tab ${mode === "login" ? "login-tab--active" : ""}`}
+            onClick={() => { setMode("login"); setError(""); }}
+          >
+            Iniciar sesión
+          </button>
+          <button
+            className={`login-tab ${mode === "register" ? "login-tab--active" : ""}`}
+            onClick={() => { setMode("register"); setError(""); }}
+          >
+            Crear cuenta
+          </button>
         </div>
 
-        <div style={{ display: "flex", background: "#f4f2ed", borderRadius: 10, padding: 3, marginBottom: 18, gap: 2 }}>
-          <button className={`tab-btn ${mode === "login" ? "active" : ""}`} onClick={() => { setMode("login"); setError(""); }}>Iniciar sesión</button>
-          <button className={`tab-btn ${mode === "register" ? "active" : ""}`} onClick={() => { setMode("register"); setError(""); }}>Crear cuenta</button>
-        </div>
+        {error && <div className="login-error">⚠️ {error}</div>}
 
-        {error && (
-          <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", borderRadius: 8, padding: "10px 14px", fontSize: 12.5, fontWeight: 500, marginBottom: 14, display: "flex", alignItems: "center", gap: 6 }}>
-            ⚠️ {error}
-          </div>
-        )}
-
-        <form onSubmit={handleEmail} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <form onSubmit={handleEmail}>
           {mode === "register" && (
-            <div>
-              <label style={S.label}>Nombre (opcional)</label>
-              <input className="login-input" type="text" placeholder="Tu nombre" value={name} onChange={(e) => setName(e.target.value)} maxLength={50} />
+            <div className="login-field">
+              <label className="login-label">Nombre (opcional)</label>
+              <input
+                className="login-input"
+                type="text"
+                placeholder="Tu nombre"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={50}
+              />
             </div>
           )}
-          <div>
-            <label style={S.label}>Email</label>
-            <input className="login-input" type="email" placeholder="tucorreo@email.com" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
+          <div className="login-field">
+            <label className="login-label">Email</label>
+            <input
+              className="login-input"
+              type="email"
+              placeholder="tucorreo@email.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              autoComplete="email"
+            />
           </div>
-          <div>
-            <label style={S.label}>Contraseña</label>
-            <input className="login-input" type="password" placeholder={mode === "register" ? "Mínimo 6 caracteres" : "Tu contraseña"} value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} autoComplete={mode === "register" ? "new-password" : "current-password"} />
+          <div className="login-field">
+            <label className="login-label">Contraseña</label>
+            <input
+              className="login-input"
+              type="password"
+              placeholder={mode === "register" ? "Mínimo 6 caracteres" : "Tu contraseña"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
+              autoComplete={mode === "register" ? "new-password" : "current-password"}
+            />
           </div>
-          <button type="submit" className="btn-primary" disabled={loading || !email || !password} style={{ marginTop: 4 }}>
-            {loading ? "⏳ Espera..." : mode === "login" ? "Entrar" : "Crear cuenta"}
+          <button
+            type="submit"
+            className="btn-primary btn-primary--accent"
+            disabled={loading || !email || !password}
+            style={{ marginTop: 6 }}
+          >
+            {loading ? "Espera…" : mode === "login" ? "Entrar" : "Crear cuenta"}
           </button>
         </form>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "18px 0 14px" }}>
-          <span style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
-          <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 500 }}>o continúa con</span>
-          <span style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
+        <div className="login-divider">
+          <span className="login-divider__line" />
+          <span className="login-divider__text">o continúa con</span>
+          <span className="login-divider__line" />
         </div>
 
-        <button className="btn-google" onClick={handleGoogle} disabled={loading}>
-          <svg width="18" height="18" viewBox="0 0 48 48" style={{ marginRight: 10 }}>
+        <button className="login-google" onClick={handleGoogle} disabled={loading}>
+          <svg width="16" height="16" viewBox="0 0 48 48">
             <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
             <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
             <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
@@ -124,9 +160,13 @@ export default function Login() {
           Google
         </button>
 
-        <p style={{ textAlign: "center", fontSize: 12.5, color: "#6b7280", marginTop: 18 }}>
+        <p className="login-footer">
           {mode === "login" ? "¿No tienes cuenta? " : "¿Ya tienes cuenta? "}
-          <button onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }} style={{ background: "none", border: "none", color: "#4338ca", fontWeight: 700, cursor: "pointer", fontSize: 12.5, fontFamily: "'IBM Plex Sans', sans-serif", textDecoration: "underline", textUnderlineOffset: 2 }}>
+          <button
+            className="login-link"
+            onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }}
+            style={{ background: "none", border: "none", cursor: "pointer", padding: 0, font: "inherit" }}
+          >
             {mode === "login" ? "Regístrate aquí" : "Inicia sesión"}
           </button>
         </p>
@@ -134,11 +174,3 @@ export default function Login() {
     </div>
   );
 }
-
-const S = {
-  page: { fontFamily: "'IBM Plex Sans', sans-serif", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f4f2ed", padding: 16, position: "relative", overflow: "hidden" },
-  bgCircle1: { position: "absolute", top: -100, right: -60, width: 300, height: 300, borderRadius: "50%", background: "radial-gradient(circle, rgba(99,102,241,0.07) 0%, transparent 70%)", pointerEvents: "none" },
-  bgCircle2: { position: "absolute", bottom: -80, left: -40, width: 260, height: 260, borderRadius: "50%", background: "radial-gradient(circle, rgba(34,197,94,0.06) 0%, transparent 70%)", pointerEvents: "none" },
-  card: { background: "#fff", borderRadius: 16, padding: "32px 28px 26px", width: "100%", maxWidth: 400, boxShadow: "0 4px 24px rgba(0,0,0,.06), 0 1px 3px rgba(0,0,0,.04)", animation: "fadeUp .45s ease-out", position: "relative", zIndex: 1 },
-  label: { display: "block", fontSize: 12, fontWeight: 600, color: "#374151", letterSpacing: 0.2, marginBottom: 4 },
-};
