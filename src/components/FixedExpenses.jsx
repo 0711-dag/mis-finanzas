@@ -3,7 +3,7 @@ import Section from "./Section.jsx";
 import ActionButtons from "./shared/ActionButtons.jsx";
 import { fmt } from "../utils/format.js";
 
-export default function FixedExpenses({ data, addRow, deleteRow, saveRowEdit, toggleRecurrente, setAddingTo, addingTo }) {
+export default function FixedExpenses({ data, addRow, deleteRow, saveRowEdit, toggleRecurrente, setAddingTo, addingTo, mobileMode }) {
   const [newRow, setNewRow] = useState({});
   const [editingRow, setEditingRow] = useState(null);
 
@@ -38,187 +38,152 @@ export default function FixedExpenses({ data, addRow, deleteRow, saveRowEdit, to
     if (success) setAddingTo(null);
   };
 
+  const AddForm = (
+    <div style={{
+      background: "var(--bg-subtle)",
+      borderRadius: "var(--radius-md)",
+      padding: 14, marginBottom: 10,
+      border: "1.5px solid var(--accent)",
+    }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)", marginBottom: 10 }}>
+        Nuevo gasto fijo
+      </div>
+      <input className="sheet-input" placeholder="Concepto (ej: Luz, Alquiler)" value={newRow.concepto || ""} onChange={(e) => setNewRow({ ...newRow, concepto: e.target.value })} maxLength={100} />
+      <div style={{ display: "flex", gap: 6 }}>
+        <input className="sheet-input" placeholder={newRow.recurrente ? "Día (1-31)" : "Ej: 1, 15..."} value={newRow.diaPago || ""} onChange={(e) => setNewRow({ ...newRow, diaPago: e.target.value })} maxLength={10} style={{ flex: 1 }} />
+        <input className="sheet-input" type="number" placeholder="Monto €" value={newRow.monto || ""} onChange={(e) => setNewRow({ ...newRow, monto: e.target.value })} style={{ flex: 1 }} />
+      </div>
+
+      <label style={{
+        display: "flex", alignItems: "center", gap: 8, padding: "6px 0",
+        fontSize: 12, color: "var(--text-secondary)", cursor: "pointer",
+      }}>
+        <button
+          type="button"
+          className={`toggle ${newRow.recurrente ? "toggle--on" : ""}`}
+          onClick={() => setNewRow({ ...newRow, recurrente: !newRow.recurrente })}
+        >
+          <div className="toggle__knob" />
+        </button>
+        <span style={{ fontWeight: 600 }}>Generar pago automático cada ciclo</span>
+      </label>
+
+      <button className="btn-primary btn-primary--accent" onClick={handleSaveNew} style={{ marginTop: 4 }}>
+        Crear gasto fijo
+      </button>
+    </div>
+  );
+
   return (
-    <Section title="🏠 Gastos Fijos" onAdd={handleAdd}>
-      {/* Indicador de recurrentes */}
+    <Section title="Gastos fijos" icon="🏠" onAdd={handleAdd} mobileMode={mobileMode}>
       {expenses.some((f) => f.recurrente) && (
         <div style={{
-          padding: "6px 12px",
-          background: "#eef2ff",
-          borderBottom: "1px solid #c7d2fe",
-          fontSize: 11,
-          color: "#4338ca",
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
+          padding: "8px 12px", marginBottom: 10,
+          background: "var(--category-recurring-bg)",
+          borderRadius: "var(--radius-md)",
+          fontSize: 11, color: "var(--category-recurring)",
+          fontWeight: 600, display: "flex", alignItems: "center", gap: 6,
         }}>
-          <span>🔄</span>
-          <span>
-            <strong>{expenses.filter((f) => f.recurrente).length}</strong> gasto(s) se añaden automáticamente al calendario cada ciclo
-            {totalRecurrente > 0 && <span style={{ marginLeft: 4 }}>({fmt(totalRecurrente)}/mes)</span>}
-          </span>
+          🔄 {expenses.filter((f) => f.recurrente).length} gastos automáticos · {fmt(totalRecurrente)}/ciclo
         </div>
       )}
 
-      <div style={{ overflowX: "auto" }}>
-        <table>
-          <thead>
-            <tr>
-              <th>Concepto</th>
-              <th>Día pago</th>
-              <th>Monto aprox.</th>
-              <th style={{ width: 60, textAlign: "center" }}>Auto</th>
-              <th style={{ width: 70 }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {expenses.map((f) => {
-              const re = isRowEditing(f.id);
-              const isRecurrente = !!f.recurrente;
-              const dayValid = !isNaN(parseInt(f.diaPago)) && parseInt(f.diaPago) >= 1 && parseInt(f.diaPago) <= 31;
+      {addingTo === "fixedExpenses" && AddForm}
 
-              return (
-                <tr key={f.id} className={re ? "row-editing" : ""} style={!re && isRecurrente ? { background: "#faf5ff" } : {}}>
-                  <td>
-                    {re ? (
-                      <input className="row-input" value={rowField("concepto")} onChange={(e) => setRowField("concepto", e.target.value)} maxLength={100} />
-                    ) : (
-                      <div>
-                        <span>{f.concepto}</span>
-                        {isRecurrente && (
-                          <div style={{ fontSize: 10, color: "#7c3aed", fontWeight: 600, marginTop: 1 }}>
-                            🔄 Se genera cada ciclo
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                  <td>
-                    {re ? (
-                      <input
-                        className="row-input"
-                        value={rowField("diaPago")}
-                        onChange={(e) => setRowField("diaPago", e.target.value)}
-                        maxLength={10}
-                        placeholder={rowField("recurrente") ? "1-31" : "Ej: 1, 15..."}
-                      />
-                    ) : (
-                      <span>
-                        {f.diaPago}
-                        {isRecurrente && !dayValid && (
-                          <span style={{ fontSize: 10, color: "#dc2626", display: "block" }}>⚠️ Pon un día (1-31)</span>
-                        )}
-                      </span>
-                    )}
-                  </td>
-                  <td className="mono">
-                    {re ? (
-                      <input className="row-input" type="number" value={rowField("monto")} onChange={(e) => setRowField("monto", parseFloat(e.target.value) || 0)} />
-                    ) : (
-                      fmt(f.monto)
-                    )}
-                  </td>
-                  <td style={{ textAlign: "center" }}>
-                    {re ? (
-                      <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, cursor: "pointer" }}>
-                        <input
-                          type="checkbox"
-                          checked={!!rowField("recurrente")}
-                          onChange={(e) => setRowField("recurrente", e.target.checked)}
-                          style={{ width: 16, height: 16, accentColor: "#7c3aed", cursor: "pointer" }}
-                        />
-                      </label>
-                    ) : (
-                      <button
-                        onClick={() => toggleRecurrente(f.id)}
-                        title={isRecurrente ? "Desactivar pago automático" : "Activar pago automático cada ciclo"}
-                        style={{
-                          background: isRecurrente ? "#7c3aed" : "#e5e7eb",
-                          border: "none",
-                          borderRadius: 12,
-                          width: 38,
-                          height: 20,
-                          position: "relative",
-                          cursor: "pointer",
-                          transition: "background .2s",
-                        }}
-                      >
-                        <span
-                          style={{
-                            position: "absolute",
-                            top: 2,
-                            left: isRecurrente ? 20 : 2,
-                            width: 16,
-                            height: 16,
-                            borderRadius: "50%",
-                            background: "#fff",
-                            transition: "left .2s",
-                            boxShadow: "0 1px 3px rgba(0,0,0,.2)",
-                          }}
-                        />
-                      </button>
-                    )}
-                  </td>
-                  <td>
-                    <ActionButtons
-                      section="fixedExpenses" id={f.id} item={f}
-                      isEditing={re}
-                      onStartEdit={startRowEdit}
-                      onSaveEdit={handleSaveRowEdit}
-                      onCancelEdit={cancelRowEdit}
-                      onDelete={() => deleteRow("fixedExpenses", f.id)}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-            {addingTo === "fixedExpenses" && (
-              <tr className="row-adding">
-                <td>
-                  <input className="row-input" placeholder="Concepto" value={newRow.concepto || ""} onChange={(e) => setNewRow({ ...newRow, concepto: e.target.value })} maxLength={100} />
-                </td>
-                <td>
-                  <input
-                    className="row-input"
-                    placeholder={newRow.recurrente ? "Día (1-31)" : "Ej: 1, 15..."}
-                    value={newRow.diaPago || ""}
-                    onChange={(e) => setNewRow({ ...newRow, diaPago: e.target.value })}
-                    maxLength={10}
+      <div className="item-list">
+        {expenses.map((f) => {
+          const re = isRowEditing(f.id);
+          const isRec = !!f.recurrente;
+          const dayValid = !isNaN(parseInt(f.diaPago)) && parseInt(f.diaPago) >= 1 && parseInt(f.diaPago) <= 31;
+
+          if (re) {
+            return (
+              <div key={f.id} style={{
+                background: "var(--bg-subtle)", borderRadius: "var(--radius-md)",
+                padding: 12, border: "1.5px solid var(--accent)",
+                display: "flex", flexDirection: "column", gap: 6,
+              }}>
+                <input className="sheet-input" value={rowField("concepto")} onChange={(e) => setRowField("concepto", e.target.value)} maxLength={100} />
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input className="sheet-input" placeholder={rowField("recurrente") ? "1-31" : "Ej: 1, 15"} value={rowField("diaPago")} onChange={(e) => setRowField("diaPago", e.target.value)} maxLength={10} style={{ flex: 1 }} />
+                  <input className="sheet-input" type="number" value={rowField("monto")} onChange={(e) => setRowField("monto", parseFloat(e.target.value) || 0)} style={{ flex: 1 }} />
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-secondary)" }}>
+                  <button
+                    type="button"
+                    className={`toggle ${rowField("recurrente") ? "toggle--on" : ""}`}
+                    onClick={() => setRowField("recurrente", !rowField("recurrente"))}
+                  >
+                    <div className="toggle__knob" />
+                  </button>
+                  <span style={{ fontWeight: 600 }}>Automático cada ciclo</span>
+                </label>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button className="btn-primary btn-primary--accent" onClick={handleSaveRowEdit} style={{ flex: 1 }}>Guardar</button>
+                  <button className="btn-secondary" onClick={cancelRowEdit}>Cancelar</button>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div key={f.id} className="item">
+              <div className={`item__icon ${isRec ? "item__icon--recurring" : ""}`}>
+                {isRec ? "🔄" : "🏠"}
+              </div>
+              <div className="item__body">
+                <div className="item__title">{f.concepto}</div>
+                <div className="item__subtitle">
+                  Día {f.diaPago}
+                  {isRec && !dayValid && <span style={{ color: "var(--danger)", marginLeft: 6 }}>⚠️ Ajusta día (1-31)</span>}
+                  {isRec && dayValid && <span style={{ color: "var(--category-recurring)", marginLeft: 6 }}>· Auto</span>}
+                </div>
+              </div>
+              <div className="item__right">
+                <div className="item__amount">{fmt(f.monto)}</div>
+                <div style={{ display: "flex", gap: 4, marginTop: 4, justifyContent: "flex-end", alignItems: "center" }}>
+                  <button
+                    type="button"
+                    className={`toggle ${isRec ? "toggle--on" : ""}`}
+                    onClick={() => toggleRecurrente(f.id)}
+                    title={isRec ? "Desactivar auto" : "Activar auto"}
+                    style={{ transform: "scale(0.8)", transformOrigin: "right" }}
+                  >
+                    <div className="toggle__knob" />
+                  </button>
+                  <ActionButtons
+                    section="fixedExpenses" id={f.id} item={f}
+                    isEditing={false}
+                    onStartEdit={startRowEdit}
+                    onSaveEdit={handleSaveRowEdit}
+                    onCancelEdit={cancelRowEdit}
+                    onDelete={() => deleteRow("fixedExpenses", f.id)}
                   />
-                </td>
-                <td>
-                  <input className="row-input" type="number" placeholder="0" value={newRow.monto || ""} onChange={(e) => setNewRow({ ...newRow, monto: e.target.value })} min="0" max="99999999" />
-                </td>
-                <td style={{ textAlign: "center" }}>
-                  <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, cursor: "pointer", fontSize: 10, color: "#6b7280" }}>
-                    <input
-                      type="checkbox"
-                      checked={!!newRow.recurrente}
-                      onChange={(e) => setNewRow({ ...newRow, recurrente: e.target.checked })}
-                      style={{ width: 16, height: 16, accentColor: "#7c3aed", cursor: "pointer" }}
-                    />
-                    🔄
-                  </label>
-                </td>
-                <td><button className="btn-ok" onClick={handleSaveNew}>✓</button></td>
-              </tr>
-            )}
-            {expenses.length === 0 && addingTo !== "fixedExpenses" && (
-              <tr><td colSpan={5} className="empty-row">Sin gastos fijos</td></tr>
-            )}
-          </tbody>
-          {expenses.length > 0 && (
-            <tfoot>
-              <tr className="footer-total">
-                <td style={{ textAlign: "right" }}>TOTAL</td>
-                <td></td>
-                <td className="mono">{fmt(total)}</td>
-                <td colSpan={2}></td>
-              </tr>
-            </tfoot>
-          )}
-        </table>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {expenses.length === 0 && addingTo !== "fixedExpenses" && (
+          <div className="empty">
+            <div className="empty__emoji">🏠</div>
+            <div className="empty__title">Sin gastos fijos</div>
+            <div className="empty__subtitle">Añade luz, alquiler, seguros, etc.</div>
+          </div>
+        )}
       </div>
+
+      {expenses.length > 0 && (
+        <div style={{
+          padding: "10px 14px", marginTop: 6,
+          background: "var(--bg-subtle)", borderRadius: "var(--radius-md)",
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+        }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: 0.5 }}>Total mensual</span>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>{fmt(total)}</div>
+        </div>
+      )}
     </Section>
   );
 }
