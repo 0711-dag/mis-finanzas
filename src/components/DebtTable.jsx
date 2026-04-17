@@ -4,7 +4,7 @@ import ActionButtons from "./shared/ActionButtons.jsx";
 import { fmt, fmtDate, fmtMonthShort, todayISO, monthKey, addMonths } from "../utils/format.js";
 import { isDateInCycle } from "../utils/cycle.js";
 
-export default function DebtTable({ data, addDebtWithPlan, deleteRow, saveRowEdit, selectedMonth, setAddingTo, addingTo }) {
+export default function DebtTable({ data, addDebtWithPlan, deleteRow, saveRowEdit, selectedMonth, setAddingTo, addingTo, mobileMode }) {
   const [newRow, setNewRow] = useState({});
   const [editingRow, setEditingRow] = useState(null);
 
@@ -12,7 +12,7 @@ export default function DebtTable({ data, addDebtWithPlan, deleteRow, saveRowEdi
   const totalDebtPending = debts.reduce((s, d) => s + (d.saldoPendiente || 0), 0);
   const totalCuota = debts.reduce((s, d) => s + (d.proxCuota || 0), 0);
 
-  const startRowEdit = (section, item) => setEditingRow({ id: item.id, fields: { ...item } });
+  const startRowEdit = (_s, item) => setEditingRow({ id: item.id, fields: { ...item } });
   const cancelRowEdit = () => setEditingRow(null);
   const handleSaveRowEdit = () => {
     if (!editingRow) return;
@@ -41,133 +41,145 @@ export default function DebtTable({ data, addDebtWithPlan, deleteRow, saveRowEdi
     if (success) setAddingTo(null);
   };
 
-  return (
-    <Section title="📋 Mis Deudas" onAdd={handleAdd}>
-      <div style={{ overflowX: "auto" }}>
-        <table>
-          <thead>
-            <tr>
-              <th>Entidad</th>
-              <th>Saldo pend.</th>
-              <th>Cuota (€)</th>
-              <th>Plan de pagos</th>
-              <th style={{ width: 70 }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {debts.map((d) => {
-              const hasPlan = d.totalCuotas && d.totalCuotas > 0;
-              const cuotaAct = d.cuotaActual || 0;
-              const totalC = d.totalCuotas || 0;
-              const pct = hasPlan ? (cuotaAct / totalC) * 100 : 0;
-              const terminada = hasPlan && cuotaAct >= totalC;
-              const startMK = d.fechaInicio ? monthKey(d.fechaInicio) : null;
-              const endMK = hasPlan && startMK ? addMonths(startMK, totalC - 1) : null;
-              let cuotaThisMonth = null;
-              if (hasPlan && d.fechaInicio) {
-                const debtPayments = (data.payments || []).filter(
-                  (p) => p.debtId === d.id && isDateInCycle(p.dayPago, selectedMonth)
-                );
-                if (debtPayments.length > 0) cuotaThisMonth = debtPayments[0].cuotaNum;
-              }
-              const re = isRowEditing(d.id);
-
-              return (
-                <tr key={d.id} className={re ? "row-editing" : ""} style={!re && terminada ? { background: "#f0fdf4" } : {}}>
-                  <td>
-                    {re ? (
-                      <input className="row-input" value={rowField("entidad")} onChange={(e) => setRowField("entidad", e.target.value)} maxLength={100} />
-                    ) : (
-                      <span style={terminada ? { textDecoration: "line-through", opacity: 0.6 } : {}}>{d.entidad}</span>
-                    )}
-                  </td>
-                  <td className="mono" style={{ fontWeight: 600, color: terminada ? "#16a34a" : "#dc2626" }}>
-                    {re ? (
-                      <input className="row-input" type="number" value={rowField("saldoPendiente")} onChange={(e) => setRowField("saldoPendiente", parseFloat(e.target.value) || 0)} />
-                    ) : fmt(d.saldoPendiente)}
-                  </td>
-                  <td className="mono">
-                    {re ? (
-                      <input className="row-input" type="number" value={rowField("proxCuota")} onChange={(e) => setRowField("proxCuota", parseFloat(e.target.value) || 0)} />
-                    ) : fmt(d.proxCuota)}
-                  </td>
-                  <td style={{ minWidth: 155 }}>
-                    {hasPlan ? (
-                      <div>
-                        <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 2 }}>{fmtMonthShort(startMK)} → {fmtMonthShort(endMK)}</div>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: terminada ? "#16a34a" : cuotaThisMonth ? "#4338ca" : "#4b5563", marginBottom: 3 }}>
-                          {terminada ? "✅ Completada" : cuotaThisMonth ? `📌 Cuota ${cuotaThisMonth} de ${totalC} (este ciclo)` : `Cuota ${cuotaAct} de ${totalC} pagadas`}
-                        </div>
-                        <div className="progress-bar">
-                          <div className="progress-bar__fill" style={{ width: `${pct}%`, background: terminada ? "#22c55e" : "#3b82f6" }} />
-                        </div>
-                      </div>
-                    ) : (
-                      <span style={{ fontSize: 11, color: "#9ca3af", fontStyle: "italic" }}>Sin plan</span>
-                    )}
-                  </td>
-                  <td>
-                    <ActionButtons
-                      section="debts"
-                      id={d.id}
-                      item={d}
-                      isEditing={re}
-                      onStartEdit={(_s, item) => startRowEdit("debts", item)}
-                      onSaveEdit={handleSaveRowEdit}
-                      onCancelEdit={cancelRowEdit}
-                      onDelete={() => deleteRow("debts", d.id)}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-
-            {/* Formulario añadir */}
-            {addingTo === "debts" && (
-              <>
-                <tr className="row-adding">
-                  <td><input className="row-input" placeholder="Entidad / Acreedor" value={newRow.entidad || ""} onChange={(e) => setNewRow({ ...newRow, entidad: e.target.value })} maxLength={100} /></td>
-                  <td><input className="row-input" type="number" placeholder="Saldo total" value={newRow.saldoPendiente || ""} onChange={(e) => setNewRow({ ...newRow, saldoPendiente: e.target.value })} min="0" max="99999999" /></td>
-                  <td><input className="row-input" type="number" placeholder="Cuota €" value={newRow.proxCuota || ""} onChange={(e) => setNewRow({ ...newRow, proxCuota: e.target.value })} min="0" max="99999999" /></td>
-                  <td>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                      <input className="row-input" type="number" placeholder="Nº cuotas" value={newRow.totalCuotas || ""} onChange={(e) => setNewRow({ ...newRow, totalCuotas: e.target.value })} min="0" max="360" />
-                      <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
-                        <span style={{ fontSize: 10, color: "#6b7280", whiteSpace: "nowrap" }}>Inicio:</span>
-                        <input className="row-input" style={{ flex: 1 }} type="date" value={newRow.fechaInicio || ""} onChange={(e) => setNewRow({ ...newRow, fechaInicio: e.target.value })} />
-                      </div>
-                    </div>
-                  </td>
-                  <td><button className="btn-ok" onClick={handleSaveNew}>✓</button></td>
-                </tr>
-                {newRow.totalCuotas && newRow.fechaInicio && newRow.proxCuota && (
-                  <tr className="row-adding">
-                    <td colSpan={5} style={{ fontSize: 11, color: "#4338ca", padding: "3px 8px" }}>
-                      ℹ️ Se crearán {parseInt(newRow.totalCuotas) || 0} pagos automáticos de {fmt(parseFloat(newRow.proxCuota) || 0)} desde {fmtDate(newRow.fechaInicio)}
-                      <br />
-                      <span style={{ color: "#6366f1" }}>📅 Cada pago se asignará automáticamente al ciclo financiero correcto (27→26)</span>
-                    </td>
-                  </tr>
-                )}
-              </>
-            )}
-
-            {debts.length === 0 && addingTo !== "debts" && (
-              <tr><td colSpan={5} className="empty-row">Sin deudas</td></tr>
-            )}
-          </tbody>
-          {debts.length > 0 && (
-            <tfoot>
-              <tr className="footer-total">
-                <td style={{ textAlign: "right" }}>TOTAL</td>
-                <td className="mono" style={{ color: "#dc2626" }}>{fmt(totalDebtPending)}</td>
-                <td className="mono">{fmt(totalCuota)}</td>
-                <td colSpan={2}></td>
-              </tr>
-            </tfoot>
-          )}
-        </table>
+  // ── Formulario añadir (compartido) ──
+  const AddForm = (
+    <div style={{
+      background: "var(--bg-subtle)",
+      borderRadius: "var(--radius-md)",
+      padding: 14,
+      marginBottom: 10,
+      border: "1.5px solid var(--accent)",
+    }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)", marginBottom: 10 }}>
+        Nueva deuda
       </div>
+      <input className="sheet-input" placeholder="Entidad / Acreedor" value={newRow.entidad || ""} onChange={(e) => setNewRow({ ...newRow, entidad: e.target.value })} maxLength={100} />
+      <div style={{ display: "flex", gap: 6 }}>
+        <input className="sheet-input" type="number" placeholder="Saldo total €" value={newRow.saldoPendiente || ""} onChange={(e) => setNewRow({ ...newRow, saldoPendiente: e.target.value })} style={{ flex: 1 }} />
+        <input className="sheet-input" type="number" placeholder="Cuota €" value={newRow.proxCuota || ""} onChange={(e) => setNewRow({ ...newRow, proxCuota: e.target.value })} style={{ flex: 1 }} />
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <input className="sheet-input" type="number" placeholder="Nº cuotas" value={newRow.totalCuotas || ""} onChange={(e) => setNewRow({ ...newRow, totalCuotas: e.target.value })} style={{ flex: 1 }} />
+        <input className="sheet-input" type="date" value={newRow.fechaInicio || ""} onChange={(e) => setNewRow({ ...newRow, fechaInicio: e.target.value })} style={{ flex: 1, colorScheme: "light dark" }} />
+      </div>
+      {newRow.totalCuotas && newRow.fechaInicio && newRow.proxCuota && (
+        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4, marginBottom: 10, lineHeight: 1.4 }}>
+          Se crearán {parseInt(newRow.totalCuotas) || 0} pagos de {fmt(parseFloat(newRow.proxCuota) || 0)} desde {fmtDate(newRow.fechaInicio)}. Los pagos se asignan automáticamente al ciclo 27→26.
+        </div>
+      )}
+      <button className="btn-primary btn-primary--accent" onClick={handleSaveNew} style={{ marginTop: 4 }}>
+        Crear deuda
+      </button>
+    </div>
+  );
+
+  return (
+    <Section title="Mis deudas" icon="💳" onAdd={handleAdd} mobileMode={mobileMode}>
+      {addingTo === "debts" && AddForm}
+
+      {/* Lista unificada */}
+      <div className="item-list">
+        {debts.map((d) => {
+          const hasPlan = d.totalCuotas && d.totalCuotas > 0;
+          const cuotaAct = d.cuotaActual || 0;
+          const totalC = d.totalCuotas || 0;
+          const pct = hasPlan ? (cuotaAct / totalC) * 100 : 0;
+          const terminada = hasPlan && cuotaAct >= totalC;
+          const startMK = d.fechaInicio ? monthKey(d.fechaInicio) : null;
+          const endMK = hasPlan && startMK ? addMonths(startMK, totalC - 1) : null;
+          let cuotaThisMonth = null;
+          if (hasPlan && d.fechaInicio) {
+            const debtPayments = (data.payments || []).filter(
+              (p) => p.debtId === d.id && isDateInCycle(p.dayPago, selectedMonth)
+            );
+            if (debtPayments.length > 0) cuotaThisMonth = debtPayments[0].cuotaNum;
+          }
+          const re = isRowEditing(d.id);
+
+          if (re) {
+            // Modo edición en el mismo item
+            return (
+              <div key={d.id} style={{
+                background: "var(--bg-subtle)",
+                borderRadius: "var(--radius-md)",
+                padding: 12, border: "1.5px solid var(--accent)",
+                display: "flex", flexDirection: "column", gap: 6,
+              }}>
+                <input className="sheet-input" value={rowField("entidad")} onChange={(e) => setRowField("entidad", e.target.value)} maxLength={100} />
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input className="sheet-input" type="number" value={rowField("saldoPendiente")} onChange={(e) => setRowField("saldoPendiente", parseFloat(e.target.value) || 0)} style={{ flex: 1 }} />
+                  <input className="sheet-input" type="number" value={rowField("proxCuota")} onChange={(e) => setRowField("proxCuota", parseFloat(e.target.value) || 0)} style={{ flex: 1 }} />
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button className="btn-primary btn-primary--accent" onClick={handleSaveRowEdit} style={{ flex: 1 }}>Guardar</button>
+                  <button className="btn-secondary" onClick={cancelRowEdit}>Cancelar</button>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div key={d.id} className="item" style={terminada ? { opacity: 0.6 } : {}}>
+              <div className="item__icon item__icon--debt">💳</div>
+              <div className="item__body">
+                <div className="item__title" style={terminada ? { textDecoration: "line-through" } : {}}>
+                  {d.entidad}
+                </div>
+                <div className="item__subtitle">
+                  {hasPlan ? (
+                    <>
+                      {terminada ? "✅ Completada" : cuotaThisMonth
+                        ? `Cuota ${cuotaThisMonth} de ${totalC} este ciclo`
+                        : `${cuotaAct} de ${totalC} pagadas`}
+                      {hasPlan && !terminada && (
+                        <div className="progress" style={{ marginTop: 4, width: 100 }}>
+                          <div className={`progress__fill ${terminada ? "progress__fill--done" : ""}`} style={{ width: `${pct}%` }} />
+                        </div>
+                      )}
+                    </>
+                  ) : "Sin plan de cuotas"}
+                </div>
+              </div>
+              <div className="item__right">
+                <div className="item__amount item__amount--neg">{fmt(d.saldoPendiente)}</div>
+                <div className="item__amount-sub">Cuota {fmt(d.proxCuota)}</div>
+                <div style={{ display: "flex", gap: 2, marginTop: 4, justifyContent: "flex-end" }}>
+                  <ActionButtons
+                    section="debts" id={d.id} item={d}
+                    isEditing={false}
+                    onStartEdit={(_s, item) => startRowEdit("debts", item)}
+                    onSaveEdit={handleSaveRowEdit}
+                    onCancelEdit={cancelRowEdit}
+                    onDelete={() => deleteRow("debts", d.id)}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {debts.length === 0 && addingTo !== "debts" && (
+          <div className="empty">
+            <div className="empty__emoji">💳</div>
+            <div className="empty__title">Sin deudas</div>
+            <div className="empty__subtitle">¡Genial! O añade tu primera con el botón +</div>
+          </div>
+        )}
+      </div>
+
+      {debts.length > 0 && (
+        <div style={{
+          padding: "10px 14px", marginTop: 6,
+          background: "var(--bg-subtle)", borderRadius: "var(--radius-md)",
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+        }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: 0.5 }}>Total</span>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--danger)" }}>{fmt(totalDebtPending)}</div>
+            <div style={{ fontSize: 10, color: "var(--text-tertiary)" }}>Cuotas mensuales: {fmt(totalCuota)}</div>
+          </div>
+        </div>
+      )}
     </Section>
   );
 }
