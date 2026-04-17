@@ -15,7 +15,7 @@ const CATEGORIES = [
   "📦 Otros",
 ];
 
-export default function VariableExpenses({ filteredVarExpenses, addRow, deleteRow, saveRowEdit, selectedMonth, setAddingTo, addingTo }) {
+export default function VariableExpenses({ filteredVarExpenses, addRow, deleteRow, saveRowEdit, selectedMonth, setAddingTo, addingTo, mobileMode }) {
   const [newRow, setNewRow] = useState({});
   const [editingRow, setEditingRow] = useState(null);
 
@@ -49,68 +49,122 @@ export default function VariableExpenses({ filteredVarExpenses, addRow, deleteRo
     if (success) setAddingTo(null);
   };
 
-  const CategorySelect = ({ value, onChange }) => (
-    <select className="row-input" value={value} onChange={onChange}>
-      <option value="">— Categoría —</option>
-      {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-    </select>
+  const catSelectStyle = {
+    padding: "12px 14px",
+    fontSize: 14,
+    fontWeight: 500,
+    border: "1.5px solid var(--border-default)",
+    borderRadius: "var(--radius-md)",
+    background: "var(--bg-subtle)",
+    color: "var(--text-primary)",
+    outline: "none",
+    width: "100%",
+    marginBottom: 10,
+    fontFamily: "inherit",
+  };
+
+  const AddForm = (
+    <div style={{
+      background: "var(--bg-subtle)",
+      borderRadius: "var(--radius-md)",
+      padding: 14, marginBottom: 10,
+      border: "1.5px solid var(--accent)",
+    }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)", marginBottom: 10 }}>
+        Nuevo gasto variable
+      </div>
+      <input className="sheet-input" placeholder="Concepto" value={newRow.concepto || ""} onChange={(e) => setNewRow({ ...newRow, concepto: e.target.value })} maxLength={100} />
+      <div style={{ display: "flex", gap: 6 }}>
+        <input className="sheet-input" type="number" placeholder="Monto €" value={newRow.monto || ""} onChange={(e) => setNewRow({ ...newRow, monto: e.target.value })} style={{ flex: 1 }} />
+        <input className="sheet-input" type="date" value={newRow.fecha || ""} onChange={(e) => setNewRow({ ...newRow, fecha: e.target.value })} style={{ flex: 1, colorScheme: "light dark" }} />
+      </div>
+      <select className="sheet-input" value={newRow.categoria || ""} onChange={(e) => setNewRow({ ...newRow, categoria: e.target.value })}>
+        <option value="">— Categoría —</option>
+        {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+      </select>
+      <button className="btn-primary btn-primary--accent" onClick={handleSaveNew} style={{ marginTop: 4 }}>
+        Añadir gasto
+      </button>
+    </div>
   );
 
   return (
-    <Section title={`🛒 Gastos Variables — ${formatMonthLabel(selectedMonth)}`} onAdd={handleAdd}>
-      <div style={{ overflowX: "auto" }}>
-        <table>
-          <thead>
-            <tr><th>Concepto</th><th>Monto</th><th>Categoría</th><th>Fecha</th><th style={{ width: 70 }}></th></tr>
-          </thead>
-          <tbody>
-            {filteredVarExpenses.map((v) => {
-              const re = isRowEditing(v.id);
-              return (
-                <tr key={v.id} className={re ? "row-editing" : ""}>
-                  <td>{re ? <input className="row-input" value={rowField("concepto")} onChange={(e) => setRowField("concepto", e.target.value)} maxLength={100} /> : v.concepto}</td>
-                  <td className="mono" style={{ fontWeight: 600, color: "#ea580c" }}>
-                    {re ? <input className="row-input" type="number" value={rowField("monto")} onChange={(e) => setRowField("monto", parseFloat(e.target.value) || 0)} /> : fmt(v.monto)}
-                  </td>
-                  <td>{re ? <CategorySelect value={rowField("categoria")} onChange={(e) => setRowField("categoria", e.target.value)} /> : (v.categoria || "—")}</td>
-                  <td>{re ? <input className="row-input" type="date" value={rowField("fecha")} onChange={(e) => setRowField("fecha", e.target.value)} /> : fmtDate(v.fecha)}</td>
-                  <td>
-                    <ActionButtons
-                      section="variableExpenses" id={v.id} item={v}
-                      isEditing={re}
-                      onStartEdit={startRowEdit}
-                      onSaveEdit={handleSaveRowEdit}
-                      onCancelEdit={cancelRowEdit}
-                      onDelete={() => deleteRow("variableExpenses", v.id)}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-            {addingTo === "variableExpenses" && (
-              <tr className="row-adding">
-                <td><input className="row-input" placeholder="Concepto" value={newRow.concepto || ""} onChange={(e) => setNewRow({ ...newRow, concepto: e.target.value })} maxLength={100} /></td>
-                <td><input className="row-input" type="number" placeholder="0" value={newRow.monto || ""} onChange={(e) => setNewRow({ ...newRow, monto: e.target.value })} min="0" max="99999999" /></td>
-                <td><CategorySelect value={newRow.categoria || ""} onChange={(e) => setNewRow({ ...newRow, categoria: e.target.value })} /></td>
-                <td><input className="row-input" type="date" value={newRow.fecha || ""} onChange={(e) => setNewRow({ ...newRow, fecha: e.target.value })} /></td>
-                <td><button className="btn-ok" onClick={handleSaveNew}>✓</button></td>
-              </tr>
-            )}
-            {filteredVarExpenses.length === 0 && addingTo !== "variableExpenses" && (
-              <tr><td colSpan={5} className="empty-row">Sin gastos variables este ciclo</td></tr>
-            )}
-          </tbody>
-          {filteredVarExpenses.length > 0 && (
-            <tfoot>
-              <tr className="footer-total--expense" style={{ fontWeight: 700 }}>
-                <td style={{ textAlign: "right" }}>TOTAL</td>
-                <td className="mono" style={{ color: "#ea580c" }}>{fmt(total)}</td>
-                <td colSpan={3}></td>
-              </tr>
-            </tfoot>
-          )}
-        </table>
+    <Section title={`Gastos variables · ${formatMonthLabel(selectedMonth)}`} icon="🛒" onAdd={handleAdd} mobileMode={mobileMode}>
+      {addingTo === "variableExpenses" && AddForm}
+
+      <div className="item-list">
+        {filteredVarExpenses.map((v) => {
+          const re = isRowEditing(v.id);
+          const catEmoji = v.categoria?.split(" ")[0] || "📦";
+          const catText = v.categoria?.replace(/^[^\s]+\s/, "") || "Sin categoría";
+
+          if (re) {
+            return (
+              <div key={v.id} style={{
+                background: "var(--bg-subtle)", borderRadius: "var(--radius-md)",
+                padding: 12, border: "1.5px solid var(--accent)",
+                display: "flex", flexDirection: "column", gap: 6,
+              }}>
+                <input className="sheet-input" value={rowField("concepto")} onChange={(e) => setRowField("concepto", e.target.value)} maxLength={100} />
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input className="sheet-input" type="number" value={rowField("monto")} onChange={(e) => setRowField("monto", parseFloat(e.target.value) || 0)} style={{ flex: 1 }} />
+                  <input className="sheet-input" type="date" value={rowField("fecha")} onChange={(e) => setRowField("fecha", e.target.value)} style={{ flex: 1, colorScheme: "light dark" }} />
+                </div>
+                <select className="sheet-input" value={rowField("categoria")} onChange={(e) => setRowField("categoria", e.target.value)}>
+                  <option value="">— Categoría —</option>
+                  {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button className="btn-primary btn-primary--accent" onClick={handleSaveRowEdit} style={{ flex: 1 }}>Guardar</button>
+                  <button className="btn-secondary" onClick={cancelRowEdit}>Cancelar</button>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div key={v.id} className="item">
+              <div className="item__icon">{catEmoji}</div>
+              <div className="item__body">
+                <div className="item__title">{v.concepto}</div>
+                <div className="item__subtitle">{fmtDate(v.fecha)} · {catText}</div>
+              </div>
+              <div className="item__right">
+                <div className="item__amount item__amount--neg">−{fmt(v.monto).replace("−", "").replace("-", "")}</div>
+                <div style={{ display: "flex", gap: 2, marginTop: 4, justifyContent: "flex-end" }}>
+                  <ActionButtons
+                    section="variableExpenses" id={v.id} item={v}
+                    isEditing={false}
+                    onStartEdit={startRowEdit}
+                    onSaveEdit={handleSaveRowEdit}
+                    onCancelEdit={cancelRowEdit}
+                    onDelete={() => deleteRow("variableExpenses", v.id)}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {filteredVarExpenses.length === 0 && addingTo !== "variableExpenses" && (
+          <div className="empty">
+            <div className="empty__emoji">🛒</div>
+            <div className="empty__title">Sin gastos este ciclo</div>
+            <div className="empty__subtitle">Usa el botón + o el FAB para añadir</div>
+          </div>
+        )}
       </div>
+
+      {filteredVarExpenses.length > 0 && (
+        <div style={{
+          padding: "10px 14px", marginTop: 6,
+          background: "var(--bg-subtle)", borderRadius: "var(--radius-md)",
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+        }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: 0.5 }}>Total</span>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--category-expense)" }}>{fmt(total)}</div>
+        </div>
+      )}
     </Section>
   );
 }
