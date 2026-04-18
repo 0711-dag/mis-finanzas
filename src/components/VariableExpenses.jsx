@@ -1,8 +1,10 @@
 import { useState } from "react";
 import Section from "./Section.jsx";
 import ActionButtons from "./shared/ActionButtons.jsx";
+import BudgetPanel from "./BudgetPanel.jsx";
 import { fmt, fmtDate, todayISO, formatMonthLabel } from "../utils/format.js";
 import { dateToFinancialMonth } from "../utils/cycle.js";
+import { calcBudgetUsage } from "../utils/finance.js";
 
 const CATEGORIES = [
   "🛒 Supermercado",
@@ -15,11 +17,50 @@ const CATEGORIES = [
   "📦 Otros",
 ];
 
-export default function VariableExpenses({ filteredVarExpenses, addRow, deleteRow, saveRowEdit, selectedMonth, setAddingTo, addingTo, mobileMode }) {
+export default function VariableExpenses({
+  filteredVarExpenses,
+  addRow,
+  deleteRow,
+  saveRowEdit,
+  selectedMonth,
+  setAddingTo,
+  addingTo,
+  mobileMode,
+  // Nuevas props para presupuesto
+  data,
+  addOrUpdateBudget,
+  removeBudget,
+  copyBudgetsFromPrevCycle,
+  getPrevCycle,
+}) {
   const [newRow, setNewRow] = useState({});
   const [editingRow, setEditingRow] = useState(null);
+  const [showBudget, setShowBudget] = useState(false);
 
   const total = filteredVarExpenses.reduce((s, v) => s + (v.monto || 0), 0);
+
+  // Calcular estado del presupuesto global (para el chip de la cabecera)
+  const budgets = data?.budgets || [];
+  const usage = calcBudgetUsage(budgets, data?.variableExpenses || [], selectedMonth);
+  const hayPresupuesto = usage.totalPresupuestado > 0;
+  const pctGlobal = hayPresupuesto ? (usage.totalGastado / usage.totalPresupuestado) * 100 : 0;
+
+  // Color del chip según estado global
+  const chipColor = pctGlobal >= 100 ? "danger"
+    : pctGlobal >= 80 ? "warning"
+    : "success";
+
+  const chipBg = {
+    success: "var(--success-bg)",
+    warning: "var(--warning-bg)",
+    danger: "var(--danger-bg)",
+  }[chipColor];
+
+  const chipText = {
+    success: "var(--success-text)",
+    warning: "var(--warning-text)",
+    danger: "var(--danger-text)",
+  }[chipColor];
 
   const startRowEdit = (_s, item) => setEditingRow({ id: item.id, fields: { ...item } });
   const cancelRowEdit = () => setEditingRow(null);
@@ -49,20 +90,6 @@ export default function VariableExpenses({ filteredVarExpenses, addRow, deleteRo
     if (success) setAddingTo(null);
   };
 
-  const catSelectStyle = {
-    padding: "12px 14px",
-    fontSize: 14,
-    fontWeight: 500,
-    border: "1.5px solid var(--border-default)",
-    borderRadius: "var(--radius-md)",
-    background: "var(--bg-subtle)",
-    color: "var(--text-primary)",
-    outline: "none",
-    width: "100%",
-    marginBottom: 10,
-    fontFamily: "inherit",
-  };
-
   const AddForm = (
     <div style={{
       background: "var(--bg-subtle)",
@@ -90,6 +117,52 @@ export default function VariableExpenses({ filteredVarExpenses, addRow, deleteRo
 
   return (
     <Section title={`Gastos variables · ${formatMonthLabel(selectedMonth)}`} icon="🛒" onAdd={handleAdd} mobileMode={mobileMode}>
+      {/* Toggle de presupuesto: botón siempre visible con resumen si existe */}
+      <button
+        onClick={() => setShowBudget(!showBudget)}
+        style={{
+          width: "100%",
+          padding: "10px 12px",
+          marginBottom: 10,
+          background: hayPresupuesto ? chipBg : "var(--bg-subtle)",
+          color: hayPresupuesto ? chipText : "var(--text-secondary)",
+          border: "1px solid var(--border-subtle)",
+          borderRadius: "var(--radius-md)",
+          fontSize: 12,
+          fontWeight: 600,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          cursor: "pointer",
+          textAlign: "left",
+        }}
+      >
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span>📊</span>
+          <span>
+            {hayPresupuesto
+              ? `Presupuesto: ${fmt(usage.totalGastado)} / ${fmt(usage.totalPresupuestado)} (${pctGlobal.toFixed(0)}%)`
+              : "Definir presupuesto"}
+          </span>
+        </span>
+        <span style={{ fontSize: 14 }}>
+          {showBudget ? "▲" : "▼"}
+        </span>
+      </button>
+
+      {/* Panel de presupuesto desplegable */}
+      {showBudget && addOrUpdateBudget && (
+        <BudgetPanel
+          budgets={budgets}
+          variableExpenses={data?.variableExpenses || []}
+          cycleMK={selectedMonth}
+          addOrUpdateBudget={addOrUpdateBudget}
+          removeBudget={removeBudget}
+          copyBudgetsFromPrevCycle={copyBudgetsFromPrevCycle}
+          getPrevCycle={getPrevCycle}
+        />
+      )}
+
       {addingTo === "variableExpenses" && AddForm}
 
       <div className="item-list">
