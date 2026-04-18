@@ -2,6 +2,7 @@
 // 📊 Hook principal de datos financieros
 // Carga, guarda y gestiona todo el CRUD
 // + Auto-generación de pagos recurrentes
+// + Presupuesto, metas de ahorro, pagos extra a deudas
 // ══════════════════════════════════════════════
 import { useState, useEffect, useCallback, useRef } from "react";
 import { db, ref, onValue } from "../firebase.js";
@@ -11,11 +12,16 @@ import {
   sanitizeAmount,
   sanitizeInteger,
   canAddMore,
+  migrateData,
   validateDebt,
   validateFixedExpense,
   validateIncome,
   validateVariableExpense,
   validatePayment,
+  validateBudget,
+  validateSavingsGoal,
+  validateSavingsDeposit,
+  validateDebtExtraPayment,
   LIMITS,
 } from "../validation.js";
 import { genId, monthKey, addMonths } from "../utils/format.js";
@@ -27,24 +33,25 @@ const emptyData = () => ({
   fixedExpenses: [],
   incomes: [],
   variableExpenses: [],
+  budgets: [],
+  savingsGoals: [],
+  savingsDeposits: [],
+  debtPayments: [],
 });
 
 /**
  * Genera pagos automáticos para gastos fijos recurrentes en un ciclo dado.
- * Devuelve los nuevos pagos que faltan (no duplica los existentes).
  */
 function generateRecurringPayments(fixedExpenses, existingPayments, cycleMK) {
   const recurrentes = (fixedExpenses || []).filter((f) => f.recurrente);
   const newPayments = [];
 
   for (const expense of recurrentes) {
-    // Comprobar si ya existe un pago generado para este gasto fijo en este ciclo
     const alreadyExists = existingPayments.some(
       (p) => p.fixedExpenseId === expense.id && p.month === cycleMK
     );
     if (alreadyExists) continue;
 
-    // Calcular la fecha de pago dentro del ciclo
     const payDate = getRecurringPaymentDate(expense.diaPago, cycleMK);
     if (!payDate) continue;
 
@@ -83,7 +90,7 @@ export default function useFinancialData(user) {
     return () => clearTimeout(t);
   }, [validationError]);
 
-  // Escuchar cambios en Firebase
+  // Escuchar cambios en Firebase (con migración automática)
   useEffect(() => {
     if (!dbPath) return;
     setLoading(true);
@@ -94,13 +101,7 @@ export default function useFinancialData(user) {
         if (isEditingRef.current || isSavingRef.current) return;
         const val = snapshot.val();
         if (val) {
-          setData({
-            debts: val.debts || [],
-            payments: val.payments || [],
-            fixedExpenses: val.fixedExpenses || [],
-            incomes: val.incomes || [],
-            variableExpenses: val.variableExpenses || [],
-          });
+          setData(migrateData(val));
         } else {
           setData(emptyData());
         }
@@ -113,7 +114,7 @@ export default function useFinancialData(user) {
         setOnline(false);
         try {
           const local = localStorage.getItem(`finance-${user.uid}`);
-          if (local) setData(JSON.parse(local));
+          if (local) setData(migrateData(JSON.parse(local)));
           else setData(emptyData());
         } catch {
           setData(emptyData());
@@ -135,7 +136,6 @@ export default function useFinancialData(user) {
 
   // ══════════════════════════════════════════════
   // 🔄 AUTO-GENERAR PAGOS RECURRENTES
-  // Se ejecuta cuando cambian los datos o al cargar
   // ══════════════════════════════════════════════
   const ensureRecurringPayments = useCallback(
     (currentData, cycleMK) => {
@@ -149,7 +149,6 @@ export default function useFinancialData(user) {
 
       if (newPayments.length === 0) return currentData;
 
-      // Verificar que no superamos el límite de pagos
       const totalPayments = (currentData.payments || []).length + newPayments.length;
       if (totalPayments > LIMITS.MAX_PAYMENTS) return currentData;
 
@@ -158,14 +157,15 @@ export default function useFinancialData(user) {
         payments: [...(currentData.payments || []), ...newPayments],
       };
 
-      // Guardar automáticamente
       save(updatedData);
       return updatedData;
     },
     [save]
   );
 
-  // ── CRUD helpers ──
+  // ══════════════════════════════════════════════
+  // CRUD GENÉRICO
+  // ══════════════════════════════════════════════
 
   const addRow = useCallback(
     (section, row) => {
@@ -198,11 +198,11 @@ export default function useFinancialData(user) {
     (section, id, field, val) => {
       if (!data) return;
       let cleanVal = val;
-      if (["saldoPendiente", "proxCuota", "monto", "amount", "totalCuotas", "cuotaActual"].includes(field)) {
-        cleanVal = field === "totalCuotas" || field === "cuotaActual"
+      if (["saldoPendiente", "proxCuota", "monto", "amount", "totalCuotas", "cuotaActual", "limiteCredito", "pagoMinimo", "tasaInteres"].includes(field)) {
+        cleanVal = (field === "totalCuotas" || field === "cuotaActual")
           ? sanitizeInteger(val)
           : sanitizeAmount(val);
-      } else if (typeof val === "string" && !["dayPago", "fecha", "fechaInicio", "month", "estado"].includes(field)) {
+      } else if (typeof val === "string" && !["dayPago", "fecha", "fechaInicio", "month", "estado", "tipo", "titular"].includes(field)) {
         cleanVal = sanitizeText(val);
       }
 
@@ -225,13 +225,25 @@ export default function useFinancialData(user) {
     (section, id) => {
       if (!data) return;
       let newData = { ...data, [section]: (data[section] || []).filter((r) => r.id !== id) };
-      // Si se borra una deuda, eliminar sus pagos vinculados
+      // Cascada al borrar
       if (section === "debts") {
-        newData = { ...newData, payments: (newData.payments || []).filter((p) => p.debtId !== id) };
+        newData = {
+          ...newData,
+          payments: (newData.payments || []).filter((p) => p.debtId !== id),
+          debtPayments: (newData.debtPayments || []).filter((p) => p.debtId !== id),
+        };
       }
-      // Si se borra un gasto fijo, eliminar sus pagos recurrentes vinculados
       if (section === "fixedExpenses") {
-        newData = { ...newData, payments: (newData.payments || []).filter((p) => p.fixedExpenseId !== id) };
+        newData = {
+          ...newData,
+          payments: (newData.payments || []).filter((p) => p.fixedExpenseId !== id),
+        };
+      }
+      if (section === "savingsGoals") {
+        newData = {
+          ...newData,
+          savingsDeposits: (newData.savingsDeposits || []).filter((d) => d.goalId !== id),
+        };
       }
       save(newData);
     },
@@ -254,7 +266,7 @@ export default function useFinancialData(user) {
         ),
       };
 
-      // Si editamos un gasto fijo recurrente, actualizar sus pagos PENDIENTES vinculados
+      // Sync: gasto fijo recurrente → pagos pendientes
       if (section === "fixedExpenses") {
         const updatedExpense = updatedData.fixedExpenses.find((f) => f.id === id);
         if (updatedExpense) {
@@ -262,7 +274,6 @@ export default function useFinancialData(user) {
             ...updatedData,
             payments: (updatedData.payments || []).map((p) => {
               if (p.fixedExpenseId !== id || p.estado === "PAGADO") return p;
-              // Actualizar concepto y monto del pago pendiente
               const newPayDate = updatedExpense.recurrente
                 ? getRecurringPaymentDate(updatedExpense.diaPago, p.month)
                 : p.dayPago;
@@ -275,7 +286,6 @@ export default function useFinancialData(user) {
             }),
           };
 
-          // Si se desactivó recurrente, eliminar pagos pendientes vinculados
           if (!updatedExpense.recurrente) {
             updatedData = {
               ...updatedData,
@@ -291,6 +301,10 @@ export default function useFinancialData(user) {
     },
     [data, save]
   );
+
+  // ══════════════════════════════════════════════
+  // DEUDAS (con plan de pagos)
+  // ══════════════════════════════════════════════
 
   const addDebtWithPlan = useCallback(
     (debt) => {
@@ -309,7 +323,13 @@ export default function useFinancialData(user) {
       const newDebt = { ...cleanDebt, id: debtId };
       let newPayments = [...(data.payments || [])];
 
-      if (cleanDebt.totalCuotas > 0 && cleanDebt.fechaInicio) {
+      // Solo generamos plan de cuotas si es "cuotas" o "prestamo" con totalCuotas > 0
+      const generaPlan =
+        (cleanDebt.tipo === "cuotas" || cleanDebt.tipo === "prestamo") &&
+        cleanDebt.totalCuotas > 0 &&
+        cleanDebt.fechaInicio;
+
+      if (generaPlan) {
         if (newPayments.length + cleanDebt.totalCuotas > LIMITS.MAX_PAYMENTS) {
           setValidationError(`Las cuotas generarían más de ${LIMITS.MAX_PAYMENTS} pagos en total`);
           return false;
@@ -341,7 +361,10 @@ export default function useFinancialData(user) {
     [data, save]
   );
 
-  // ── Toggle recurrente de un gasto fijo ──
+  // ══════════════════════════════════════════════
+  // GASTOS FIJOS — Toggle recurrente
+  // ══════════════════════════════════════════════
+
   const toggleRecurrente = useCallback(
     (fixedExpenseId) => {
       if (!data) return;
@@ -356,7 +379,6 @@ export default function useFinancialData(user) {
         ),
       };
 
-      // Si se desactiva, eliminar pagos pendientes de este gasto fijo
       if (!newRecurrente) {
         updatedData = {
           ...updatedData,
@@ -371,11 +393,287 @@ export default function useFinancialData(user) {
     [data, save]
   );
 
+  // ══════════════════════════════════════════════
+  // 🆕 PRESUPUESTO POR CATEGORÍA
+  // ══════════════════════════════════════════════
+
+  /**
+   * Crea o actualiza el presupuesto de una categoría en un ciclo.
+   * Si ya existe para (ciclo, categoría), se sobrescribe.
+   */
+  const addOrUpdateBudget = useCallback(
+    (cycleMK, categoria, monto) => {
+      if (!data) return false;
+      const validation = validateBudget({ cycleMK, categoria, monto });
+      if (!validation.valid) {
+        setValidationError(validation.errors.join(". "));
+        return false;
+      }
+      const clean = validation.data;
+      const existing = (data.budgets || []).find(
+        (b) => b.cycleMK === clean.cycleMK && b.categoria === clean.categoria
+      );
+
+      let budgets;
+      if (existing) {
+        budgets = data.budgets.map((b) =>
+          b.id === existing.id ? { ...b, monto: clean.monto } : b
+        );
+      } else {
+        if (!canAddMore("budgets", data)) {
+          setValidationError(`Máximo ${LIMITS.MAX_BUDGETS} presupuestos`);
+          return false;
+        }
+        budgets = [...(data.budgets || []), { ...clean, id: genId() }];
+      }
+
+      save({ ...data, budgets });
+      setValidationError("");
+      return true;
+    },
+    [data, save]
+  );
+
+  const removeBudget = useCallback(
+    (cycleMK, categoria) => {
+      if (!data) return;
+      save({
+        ...data,
+        budgets: (data.budgets || []).filter(
+          (b) => !(b.cycleMK === cycleMK && b.categoria === categoria)
+        ),
+      });
+    },
+    [data, save]
+  );
+
+  /**
+   * Copia los presupuestos del ciclo anterior al ciclo actual.
+   * Útil al inicio de cada ciclo para no repetir trabajo.
+   */
+  const copyBudgetsFromPrevCycle = useCallback(
+    (targetCycleMK, sourceCycleMK) => {
+      if (!data) return;
+      const source = (data.budgets || []).filter((b) => b.cycleMK === sourceCycleMK);
+      if (source.length === 0) return;
+
+      const existingInTarget = new Set(
+        (data.budgets || [])
+          .filter((b) => b.cycleMK === targetCycleMK)
+          .map((b) => b.categoria)
+      );
+
+      const copied = source
+        .filter((b) => !existingInTarget.has(b.categoria))
+        .map((b) => ({
+          id: genId(),
+          cycleMK: targetCycleMK,
+          categoria: b.categoria,
+          monto: b.monto,
+        }));
+
+      if (copied.length === 0) return;
+      save({ ...data, budgets: [...(data.budgets || []), ...copied] });
+    },
+    [data, save]
+  );
+
+  // ══════════════════════════════════════════════
+  // 🆕 METAS DE AHORRO
+  // ══════════════════════════════════════════════
+
+  const addGoal = useCallback(
+    (goal) => {
+      if (!data) return false;
+      if (!canAddMore("savingsGoals", data)) {
+        setValidationError(`Máximo ${LIMITS.MAX_SAVINGS_GOALS} metas`);
+        return false;
+      }
+      const validation = validateSavingsGoal(goal);
+      if (!validation.valid) {
+        setValidationError(validation.errors.join(". "));
+        return false;
+      }
+      // Solo puede existir una meta tipo "emergencia"
+      if (validation.data.tipo === "emergencia") {
+        const yaHay = (data.savingsGoals || []).some((g) => g.tipo === "emergencia");
+        if (yaHay) {
+          setValidationError("Ya existe un fondo de emergencia. Edítalo en lugar de crear otro.");
+          return false;
+        }
+      }
+      save({
+        ...data,
+        savingsGoals: [...(data.savingsGoals || []), { ...validation.data, id: genId() }],
+      });
+      setValidationError("");
+      return true;
+    },
+    [data, save]
+  );
+
+  const updateGoal = useCallback(
+    (id, fields) => {
+      if (!data) return;
+      const existing = (data.savingsGoals || []).find((g) => g.id === id);
+      if (!existing) return;
+      const merged = { ...existing, ...fields };
+      const validation = validateSavingsGoal(merged);
+      if (!validation.valid) {
+        setValidationError(validation.errors.join(". "));
+        return;
+      }
+      save({
+        ...data,
+        savingsGoals: data.savingsGoals.map((g) =>
+          g.id === id ? { ...g, ...validation.data } : g
+        ),
+      });
+      setValidationError("");
+    },
+    [data, save]
+  );
+
+  const deleteGoal = useCallback(
+    (id) => {
+      if (!data) return;
+      save({
+        ...data,
+        savingsGoals: (data.savingsGoals || []).filter((g) => g.id !== id),
+        savingsDeposits: (data.savingsDeposits || []).filter((d) => d.goalId !== id),
+      });
+    },
+    [data, save]
+  );
+
+  /**
+   * Añade un aporte a una meta. El aporte queda vinculado al ciclo
+   * en que cae la fecha.
+   */
+  const addDeposit = useCallback(
+    (goalId, monto, fecha, nota = "") => {
+      if (!data) return false;
+      if (!canAddMore("savingsDeposits", data)) {
+        setValidationError(`Máximo ${LIMITS.MAX_SAVINGS_DEPOSITS} aportes`);
+        return false;
+      }
+      const goal = (data.savingsGoals || []).find((g) => g.id === goalId);
+      if (!goal) {
+        setValidationError("Meta no encontrada");
+        return false;
+      }
+      const month = /^\d{4}-\d{2}-\d{2}$/.test(fecha)
+        ? dateToFinancialMonth(fecha)
+        : "";
+      const validation = validateSavingsDeposit({ goalId, monto, fecha, month, nota });
+      if (!validation.valid) {
+        setValidationError(validation.errors.join(". "));
+        return false;
+      }
+      save({
+        ...data,
+        savingsDeposits: [
+          ...(data.savingsDeposits || []),
+          { ...validation.data, id: genId() },
+        ],
+      });
+      setValidationError("");
+      return true;
+    },
+    [data, save]
+  );
+
+  const deleteDeposit = useCallback(
+    (depositId) => {
+      if (!data) return;
+      save({
+        ...data,
+        savingsDeposits: (data.savingsDeposits || []).filter((d) => d.id !== depositId),
+      });
+    },
+    [data, save]
+  );
+
+  // ══════════════════════════════════════════════
+  // 🆕 PAGOS EXTRA A DEUDAS (fuera del plan)
+  // ══════════════════════════════════════════════
+
+  /**
+   * Registra un pago extra a una deuda (amortización anticipada)
+   * y reduce el saldo pendiente de la deuda.
+   */
+  const addDebtExtraPayment = useCallback(
+    (debtId, monto, fecha, nota = "") => {
+      if (!data) return false;
+      if (!canAddMore("debtPayments", data)) {
+        setValidationError(`Máximo ${LIMITS.MAX_DEBT_PAYMENTS} pagos extra`);
+        return false;
+      }
+      const debt = (data.debts || []).find((d) => d.id === debtId);
+      if (!debt) {
+        setValidationError("Deuda no encontrada");
+        return false;
+      }
+      const month = /^\d{4}-\d{2}-\d{2}$/.test(fecha)
+        ? dateToFinancialMonth(fecha)
+        : "";
+      const validation = validateDebtExtraPayment({ debtId, monto, fecha, month, nota });
+      if (!validation.valid) {
+        setValidationError(validation.errors.join(". "));
+        return false;
+      }
+      const clean = validation.data;
+
+      // Reducir saldo pendiente de la deuda
+      const nuevoSaldo = Math.max(0, (Number(debt.saldoPendiente) || 0) - clean.monto);
+
+      save({
+        ...data,
+        debtPayments: [...(data.debtPayments || []), { ...clean, id: genId() }],
+        debts: data.debts.map((d) =>
+          d.id === debtId ? { ...d, saldoPendiente: nuevoSaldo } : d
+        ),
+      });
+      setValidationError("");
+      return true;
+    },
+    [data, save]
+  );
+
+  const deleteDebtExtraPayment = useCallback(
+    (paymentId) => {
+      if (!data) return;
+      const payment = (data.debtPayments || []).find((p) => p.id === paymentId);
+      if (!payment) return;
+
+      // Revertir el saldo (sumar de vuelta)
+      const debt = (data.debts || []).find((d) => d.id === payment.debtId);
+      const nuevosDebts = debt
+        ? data.debts.map((d) =>
+            d.id === payment.debtId
+              ? { ...d, saldoPendiente: (Number(d.saldoPendiente) || 0) + (Number(payment.monto) || 0) }
+              : d
+          )
+        : data.debts;
+
+      save({
+        ...data,
+        debts: nuevosDebts,
+        debtPayments: (data.debtPayments || []).filter((p) => p.id !== paymentId),
+      });
+    },
+    [data, save]
+  );
+
+  // ══════════════════════════════════════════════
+  // RESET
+  // ══════════════════════════════════════════════
   const resetAll = useCallback(() => {
     save(emptyData());
   }, [save]);
 
   return {
+    // Estado
     data,
     loading,
     syncing,
@@ -384,14 +682,29 @@ export default function useFinancialData(user) {
     validationError,
     setValidationError,
     isEditingRef,
+    // Generales
     save,
     addRow,
     updField,
     deleteRow,
     saveRowEdit,
-    addDebtWithPlan,
     resetAll,
+    // Gastos fijos
     toggleRecurrente,
     ensureRecurringPayments,
+    // Deudas
+    addDebtWithPlan,
+    addDebtExtraPayment,
+    deleteDebtExtraPayment,
+    // Presupuesto
+    addOrUpdateBudget,
+    removeBudget,
+    copyBudgetsFromPrevCycle,
+    // Metas de ahorro
+    addGoal,
+    updateGoal,
+    deleteGoal,
+    addDeposit,
+    deleteDeposit,
   };
 }
