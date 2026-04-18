@@ -2,6 +2,7 @@
 // 📱 Pantalla de resumen móvil (home)
 // ══════════════════════════════════════════════
 import { fmt, fmtDate } from "../../utils/format.js";
+import MetricsCards from "../MetricsCards.jsx";
 
 export default function MobileSummary({
   totalIncomes,
@@ -14,6 +15,7 @@ export default function MobileSummary({
   filteredVarExpenses,
   filteredIncomes,
   data,
+  selectedMonth,
   onShowReport,
   save,
 }) {
@@ -118,6 +120,12 @@ export default function MobileSummary({
           <div className="stat-card__value stat-card__value--debt">{fmt(totalDebtPending)}</div>
         </div>
       </div>
+
+      {/* 🆕 MÉTRICAS FINANCIERAS */}
+      <div className="section-header">
+        <div className="section-header__title">Salud financiera</div>
+      </div>
+      <MetricsCards data={data} selectedMonth={selectedMonth} compact />
 
       {/* Últimos movimientos */}
       <div className="section-header">
