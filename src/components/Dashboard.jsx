@@ -31,11 +31,25 @@ import VariableExpenses from "./VariableExpenses.jsx";
 import PaymentCalendar from "./PaymentCalendar.jsx";
 import ReportModal from "./ReportModal.jsx";
 
+/**
+ * Dado un ciclo "YYYY-MM", devuelve el ciclo anterior "YYYY-MM".
+ * Usado para copiar presupuestos del ciclo previo.
+ */
+function getPrevCycle(cycleMK) {
+  if (!cycleMK || !/^\d{4}-\d{2}$/.test(cycleMK)) return null;
+  const [y, m] = cycleMK.split("-").map(Number);
+  const prevMonth = m === 1 ? 12 : m - 1;
+  const prevYear = m === 1 ? y - 1 : y;
+  return `${prevYear}-${String(prevMonth).padStart(2, "0")}`;
+}
+
 export default function Dashboard({ user, theme, toggleTheme }) {
   const {
     data, loading, syncing, online, lastSyncTime, validationError,
     save, addRow, updField, deleteRow, saveRowEdit, addDebtWithPlan, resetAll,
     isEditingRef, toggleRecurrente, ensureRecurringPayments,
+    // Nuevas funciones de presupuesto
+    addOrUpdateBudget, removeBudget, copyBudgetsFromPrevCycle,
   } = useFinancialData(user);
 
   useAutoLogout(user);
@@ -120,6 +134,23 @@ export default function Dashboard({ user, theme, toggleTheme }) {
     return [...months].filter(Boolean).sort().reverse();
   };
   const allMonths = getAllFinancialMonths();
+
+  // Props comunes para VariableExpenses (móvil y desktop)
+  const variableExpensesProps = {
+    filteredVarExpenses,
+    addRow,
+    deleteRow,
+    saveRowEdit,
+    selectedMonth,
+    setAddingTo,
+    addingTo,
+    // Props de presupuesto
+    data,
+    addOrUpdateBudget,
+    removeBudget,
+    copyBudgetsFromPrevCycle,
+    getPrevCycle,
+  };
 
   // ══════════════════════════════════════════════
   // RENDER MÓVIL
@@ -236,16 +267,7 @@ export default function Dashboard({ user, theme, toggleTheme }) {
                 />
               </MobileSection>
               <MobileSection title="Gastos variables">
-                <VariableExpenses
-                  filteredVarExpenses={filteredVarExpenses}
-                  addRow={addRow}
-                  deleteRow={deleteRow}
-                  saveRowEdit={saveRowEdit}
-                  selectedMonth={selectedMonth}
-                  setAddingTo={setAddingTo}
-                  addingTo={addingTo}
-                  mobileMode
-                />
+                <VariableExpenses {...variableExpensesProps} mobileMode />
               </MobileSection>
 
               <button
@@ -429,15 +451,7 @@ export default function Dashboard({ user, theme, toggleTheme }) {
                 setAddingTo={setAddingTo}
                 addingTo={addingTo}
               />
-              <VariableExpenses
-                filteredVarExpenses={filteredVarExpenses}
-                addRow={addRow}
-                deleteRow={deleteRow}
-                saveRowEdit={saveRowEdit}
-                selectedMonth={selectedMonth}
-                setAddingTo={setAddingTo}
-                addingTo={addingTo}
-              />
+              <VariableExpenses {...variableExpensesProps} />
             </div>
 
             <div>
