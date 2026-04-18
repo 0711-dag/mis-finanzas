@@ -3,6 +3,17 @@ import Section from "./Section.jsx";
 import ActionButtons from "./shared/ActionButtons.jsx";
 import { fmt } from "../utils/format.js";
 
+// Categorías sugeridas para gastos fijos del hogar
+const FIXED_CATEGORIES = [
+  "🏠 Vivienda",        // alquiler, hipoteca, comunidad
+  "💡 Servicios",       // luz, agua, gas, internet
+  "🛡️ Seguros",         // hogar, vida, coche
+  "📺 Suscripciones",   // Netflix, Spotify, gimnasio
+  "🎓 Educación",       // colegios, cursos
+  "🚗 Transporte",      // parking mensual, abono
+  "📦 Otros",
+];
+
 export default function FixedExpenses({ data, addRow, deleteRow, saveRowEdit, toggleRecurrente, setAddingTo, addingTo, mobileMode }) {
   const [newRow, setNewRow] = useState({});
   const [editingRow, setEditingRow] = useState(null);
@@ -10,6 +21,9 @@ export default function FixedExpenses({ data, addRow, deleteRow, saveRowEdit, to
   const expenses = data.fixedExpenses || [];
   const total = expenses.reduce((s, f) => s + (f.monto || 0), 0);
   const totalRecurrente = expenses.filter((f) => f.recurrente).reduce((s, f) => s + (f.monto || 0), 0);
+
+  // Gastos fijos sin clasificar (para el aviso al usuario)
+  const sinClasificar = expenses.filter((f) => !f.categoria).length;
 
   const startRowEdit = (_s, item) => setEditingRow({ id: item.id, fields: { ...item } });
   const cancelRowEdit = () => setEditingRow(null);
@@ -25,7 +39,7 @@ export default function FixedExpenses({ data, addRow, deleteRow, saveRowEdit, to
 
   const handleAdd = () => {
     setAddingTo("fixedExpenses");
-    setNewRow({ concepto: "", diaPago: "", monto: "", recurrente: true });
+    setNewRow({ concepto: "", diaPago: "", monto: "", recurrente: true, categoria: "" });
   };
 
   const handleSaveNew = () => {
@@ -34,6 +48,7 @@ export default function FixedExpenses({ data, addRow, deleteRow, saveRowEdit, to
       diaPago: newRow.diaPago,
       monto: parseFloat(newRow.monto) || 0,
       recurrente: !!newRow.recurrente,
+      categoria: newRow.categoria || "",
     });
     if (success) setAddingTo(null);
   };
@@ -53,6 +68,10 @@ export default function FixedExpenses({ data, addRow, deleteRow, saveRowEdit, to
         <input className="sheet-input" placeholder={newRow.recurrente ? "Día (1-31)" : "Ej: 1, 15..."} value={newRow.diaPago || ""} onChange={(e) => setNewRow({ ...newRow, diaPago: e.target.value })} maxLength={10} style={{ flex: 1 }} />
         <input className="sheet-input" type="number" placeholder="Monto €" value={newRow.monto || ""} onChange={(e) => setNewRow({ ...newRow, monto: e.target.value })} style={{ flex: 1 }} />
       </div>
+      <select className="sheet-input" value={newRow.categoria || ""} onChange={(e) => setNewRow({ ...newRow, categoria: e.target.value })}>
+        <option value="">— Categoría —</option>
+        {FIXED_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+      </select>
 
       <label style={{
         display: "flex", alignItems: "center", gap: 8, padding: "6px 0",
@@ -76,6 +95,19 @@ export default function FixedExpenses({ data, addRow, deleteRow, saveRowEdit, to
 
   return (
     <Section title="Gastos fijos" icon="🏠" onAdd={handleAdd} mobileMode={mobileMode}>
+      {/* Aviso de gastos sin categoría */}
+      {sinClasificar > 0 && (
+        <div style={{
+          padding: "8px 12px", marginBottom: 10,
+          background: "var(--warning-bg)",
+          borderRadius: "var(--radius-md)",
+          fontSize: 11, color: "var(--warning-text)",
+          fontWeight: 600, display: "flex", alignItems: "center", gap: 6,
+        }}>
+          ⚠️ {sinClasificar} {sinClasificar === 1 ? "gasto sin clasificar" : "gastos sin clasificar"} · edítalos para asignar categoría
+        </div>
+      )}
+
       {expenses.some((f) => f.recurrente) && (
         <div style={{
           padding: "8px 12px", marginBottom: 10,
@@ -95,6 +127,9 @@ export default function FixedExpenses({ data, addRow, deleteRow, saveRowEdit, to
           const re = isRowEditing(f.id);
           const isRec = !!f.recurrente;
           const dayValid = !isNaN(parseInt(f.diaPago)) && parseInt(f.diaPago) >= 1 && parseInt(f.diaPago) <= 31;
+          // Emoji de la categoría (primer caracter) si existe
+          const catEmoji = f.categoria ? f.categoria.split(" ")[0] : null;
+          const catText = f.categoria ? f.categoria.replace(/^[^\s]+\s/, "") : null;
 
           if (re) {
             return (
@@ -108,6 +143,10 @@ export default function FixedExpenses({ data, addRow, deleteRow, saveRowEdit, to
                   <input className="sheet-input" placeholder={rowField("recurrente") ? "1-31" : "Ej: 1, 15"} value={rowField("diaPago")} onChange={(e) => setRowField("diaPago", e.target.value)} maxLength={10} style={{ flex: 1 }} />
                   <input className="sheet-input" type="number" value={rowField("monto")} onChange={(e) => setRowField("monto", parseFloat(e.target.value) || 0)} style={{ flex: 1 }} />
                 </div>
+                <select className="sheet-input" value={rowField("categoria")} onChange={(e) => setRowField("categoria", e.target.value)}>
+                  <option value="">— Categoría —</option>
+                  {FIXED_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
                 <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-secondary)" }}>
                   <button
                     type="button"
@@ -129,12 +168,14 @@ export default function FixedExpenses({ data, addRow, deleteRow, saveRowEdit, to
           return (
             <div key={f.id} className="item">
               <div className={`item__icon ${isRec ? "item__icon--recurring" : ""}`}>
-                {isRec ? "🔄" : "🏠"}
+                {catEmoji || (isRec ? "🔄" : "🏠")}
               </div>
               <div className="item__body">
                 <div className="item__title">{f.concepto}</div>
                 <div className="item__subtitle">
                   Día {f.diaPago}
+                  {catText && <span style={{ marginLeft: 6 }}>· {catText}</span>}
+                  {!f.categoria && <span style={{ color: "var(--warning)", marginLeft: 6 }}>· Sin categoría</span>}
                   {isRec && !dayValid && <span style={{ color: "var(--danger)", marginLeft: 6 }}>⚠️ Ajusta día (1-31)</span>}
                   {isRec && dayValid && <span style={{ color: "var(--category-recurring)", marginLeft: 6 }}>· Auto</span>}
                 </div>
