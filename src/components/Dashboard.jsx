@@ -2,6 +2,8 @@
 // 💰 Dashboard Principal
 // - Móvil: tabs inferiores + FAB central
 // - Escritorio: sidebar + grid denso
+// + Métricas financieras (tasa ahorro, ratio deuda, deuda total)
+// + Panel de Metas de Ahorro
 // ══════════════════════════════════════════════
 import { useState, useEffect } from "react";
 import { auth, signOut } from "../firebase.js";
@@ -30,6 +32,8 @@ import IncomeTable from "./IncomeTable.jsx";
 import VariableExpenses from "./VariableExpenses.jsx";
 import PaymentCalendar from "./PaymentCalendar.jsx";
 import ReportModal from "./ReportModal.jsx";
+import MetricsCards from "./MetricsCards.jsx";
+import SavingsGoals from "./SavingsGoals.jsx";
 
 /**
  * Dado un ciclo "YYYY-MM", devuelve el ciclo anterior "YYYY-MM".
@@ -48,8 +52,10 @@ export default function Dashboard({ user, theme, toggleTheme }) {
     data, loading, syncing, online, lastSyncTime, validationError,
     save, addRow, updField, deleteRow, saveRowEdit, addDebtWithPlan, resetAll,
     isEditingRef, toggleRecurrente, ensureRecurringPayments,
-    // Nuevas funciones de presupuesto
+    // Presupuesto
     addOrUpdateBudget, removeBudget, copyBudgetsFromPrevCycle,
+    // Metas de ahorro
+    addGoal, updateGoal, deleteGoal, addDeposit, deleteDeposit,
   } = useFinancialData(user);
 
   useAutoLogout(user);
@@ -144,12 +150,23 @@ export default function Dashboard({ user, theme, toggleTheme }) {
     selectedMonth,
     setAddingTo,
     addingTo,
-    // Props de presupuesto
     data,
     addOrUpdateBudget,
     removeBudget,
     copyBudgetsFromPrevCycle,
     getPrevCycle,
+  };
+
+  // Props comunes para SavingsGoals (móvil y desktop)
+  const savingsGoalsProps = {
+    data,
+    addGoal,
+    updateGoal,
+    deleteGoal,
+    addDeposit,
+    deleteDeposit,
+    setAddingTo,
+    addingTo,
   };
 
   // ══════════════════════════════════════════════
@@ -201,6 +218,7 @@ export default function Dashboard({ user, theme, toggleTheme }) {
               filteredVarExpenses={filteredVarExpenses}
               filteredIncomes={filteredIncomes}
               data={data}
+              selectedMonth={selectedMonth}
               onShowReport={() => setShowReport(true)}
               save={save}
             />
@@ -268,6 +286,9 @@ export default function Dashboard({ user, theme, toggleTheme }) {
               </MobileSection>
               <MobileSection title="Gastos variables">
                 <VariableExpenses {...variableExpensesProps} mobileMode />
+              </MobileSection>
+              <MobileSection title="Metas de ahorro">
+                <SavingsGoals {...savingsGoalsProps} mobileMode />
               </MobileSection>
 
               <button
@@ -411,7 +432,10 @@ export default function Dashboard({ user, theme, toggleTheme }) {
             </div>
           </div>
 
-          {/* Summary cards */}
+          {/* 🆕 MÉTRICAS FINANCIERAS */}
+          <MetricsCards data={data} selectedMonth={selectedMonth} />
+
+          {/* Summary cards (totales del ciclo) */}
           <div className="summary-grid">
             {summaryCards.map((c, i) => (
               <div key={i} className="stat-card">
@@ -454,7 +478,7 @@ export default function Dashboard({ user, theme, toggleTheme }) {
               <VariableExpenses {...variableExpensesProps} />
             </div>
 
-            <div>
+            <div className="desktop-col">
               <PaymentCalendar
                 data={data}
                 filteredPayments={filteredPayments}
@@ -466,6 +490,8 @@ export default function Dashboard({ user, theme, toggleTheme }) {
                 setAddingTo={setAddingTo}
                 addingTo={addingTo}
               />
+              {/* 🆕 METAS DE AHORRO */}
+              <SavingsGoals {...savingsGoalsProps} />
             </div>
           </div>
 
