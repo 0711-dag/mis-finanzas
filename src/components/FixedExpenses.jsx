@@ -1,26 +1,37 @@
 import { useState } from "react";
 import Section from "./Section.jsx";
 import ActionButtons from "./shared/ActionButtons.jsx";
+import CategoryManager from "./CategoryManager.jsx";
+import useCategories from "../hooks/useCategories.js";
 import { fmt } from "../utils/format.js";
 
-// Categorías sugeridas para gastos fijos del hogar
-const FIXED_CATEGORIES = [
-  "🏠 Vivienda",        // alquiler, hipoteca, comunidad
-  "💡 Servicios",       // luz, agua, gas, internet
-  "🛡️ Seguros",         // hogar, vida, coche
-  "📺 Suscripciones",   // Netflix, Spotify, gimnasio
-  "🎓 Educación",       // colegios, cursos
-  "🚗 Transporte",      // parking mensual, abono
-  "📦 Otros",
-];
-
-export default function FixedExpenses({ data, addRow, deleteRow, saveRowEdit, toggleRecurrente, setAddingTo, addingTo, mobileMode }) {
+export default function FixedExpenses({
+  data,
+  addRow,
+  deleteRow,
+  saveRowEdit,
+  toggleRecurrente,
+  setAddingTo,
+  addingTo,
+  mobileMode,
+  // 🆕 CRUD de categorías custom (opcional: si no llega, se oculta el botón de gestión)
+  addCategory,
+  updateCategory,
+  deleteCategory,
+}) {
   const [newRow, setNewRow] = useState({});
   const [editingRow, setEditingRow] = useState(null);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
 
   const expenses = data.fixedExpenses || [];
   const total = expenses.reduce((s, f) => s + (f.monto || 0), 0);
   const totalRecurrente = expenses.filter((f) => f.recurrente).reduce((s, f) => s + (f.monto || 0), 0);
+
+  // 🆕 Lista unificada de categorías (defaults + custom del usuario)
+  const { categories } = useCategories("fixed", data.customCategories);
+
+  // Indica si están disponibles las funciones de gestión (para enseñar el botón)
+  const canManageCategories = typeof addCategory === "function";
 
   // Gastos fijos sin clasificar (para el aviso al usuario)
   const sinClasificar = expenses.filter((f) => !f.categoria).length;
@@ -53,6 +64,39 @@ export default function FixedExpenses({ data, addRow, deleteRow, saveRowEdit, to
     if (success) setAddingTo(null);
   };
 
+  // Fila del selector de categoría + botón de gestión
+  const CategorySelector = ({ value, onChange }) => (
+    <div style={{ display: "flex", gap: 6 }}>
+      <select
+        className="sheet-input"
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ flex: 1 }}
+      >
+        <option value="">— Categoría —</option>
+        {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+      </select>
+      {canManageCategories && (
+        <button
+          type="button"
+          onClick={() => setShowCategoryManager(true)}
+          title="Gestionar categorías"
+          style={{
+            padding: "0 12px",
+            background: "var(--bg-surface)",
+            border: "1.5px solid var(--border-default)",
+            borderRadius: "var(--radius-md)",
+            fontSize: 14,
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        >
+          ⚙️
+        </button>
+      )}
+    </div>
+  );
+
   const AddForm = (
     <div style={{
       background: "var(--bg-subtle)",
@@ -68,10 +112,11 @@ export default function FixedExpenses({ data, addRow, deleteRow, saveRowEdit, to
         <input className="sheet-input" placeholder={newRow.recurrente ? "Día (1-31)" : "Ej: 1, 15..."} value={newRow.diaPago || ""} onChange={(e) => setNewRow({ ...newRow, diaPago: e.target.value })} maxLength={10} style={{ flex: 1 }} />
         <input className="sheet-input" type="number" placeholder="Monto €" value={newRow.monto || ""} onChange={(e) => setNewRow({ ...newRow, monto: e.target.value })} style={{ flex: 1 }} />
       </div>
-      <select className="sheet-input" value={newRow.categoria || ""} onChange={(e) => setNewRow({ ...newRow, categoria: e.target.value })}>
-        <option value="">— Categoría —</option>
-        {FIXED_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-      </select>
+
+      <CategorySelector
+        value={newRow.categoria}
+        onChange={(v) => setNewRow({ ...newRow, categoria: v })}
+      />
 
       <label style={{
         display: "flex", alignItems: "center", gap: 8, padding: "6px 0",
@@ -132,34 +177,49 @@ export default function FixedExpenses({ data, addRow, deleteRow, saveRowEdit, to
           const catText = f.categoria ? f.categoria.replace(/^[^\s]+\s/, "") : null;
 
           if (re) {
+            // Fila en modo edición
             return (
               <div key={f.id} style={{
                 background: "var(--bg-subtle)", borderRadius: "var(--radius-md)",
                 padding: 12, border: "1.5px solid var(--accent)",
                 display: "flex", flexDirection: "column", gap: 6,
               }}>
-                <input className="sheet-input" value={rowField("concepto")} onChange={(e) => setRowField("concepto", e.target.value)} maxLength={100} />
+                <input
+                  className="sheet-input"
+                  value={rowField("concepto")}
+                  onChange={(e) => setRowField("concepto", e.target.value)}
+                  maxLength={100}
+                />
                 <div style={{ display: "flex", gap: 6 }}>
-                  <input className="sheet-input" placeholder={rowField("recurrente") ? "1-31" : "Ej: 1, 15"} value={rowField("diaPago")} onChange={(e) => setRowField("diaPago", e.target.value)} maxLength={10} style={{ flex: 1 }} />
-                  <input className="sheet-input" type="number" value={rowField("monto")} onChange={(e) => setRowField("monto", parseFloat(e.target.value) || 0)} style={{ flex: 1 }} />
+                  <input
+                    className="sheet-input"
+                    placeholder="Día (1-31)"
+                    value={rowField("diaPago")}
+                    onChange={(e) => setRowField("diaPago", e.target.value)}
+                    maxLength={10}
+                    style={{ flex: 1 }}
+                  />
+                  <input
+                    className="sheet-input"
+                    type="number"
+                    value={rowField("monto")}
+                    onChange={(e) => setRowField("monto", parseFloat(e.target.value) || 0)}
+                    style={{ flex: 1 }}
+                  />
                 </div>
-                <select className="sheet-input" value={rowField("categoria")} onChange={(e) => setRowField("categoria", e.target.value)}>
-                  <option value="">— Categoría —</option>
-                  {FIXED_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-secondary)" }}>
-                  <button
-                    type="button"
-                    className={`toggle ${rowField("recurrente") ? "toggle--on" : ""}`}
-                    onClick={() => setRowField("recurrente", !rowField("recurrente"))}
-                  >
-                    <div className="toggle__knob" />
-                  </button>
-                  <span style={{ fontWeight: 600 }}>Automático cada ciclo</span>
-                </label>
+
+                <CategorySelector
+                  value={rowField("categoria")}
+                  onChange={(v) => setRowField("categoria", v)}
+                />
+
                 <div style={{ display: "flex", gap: 6 }}>
-                  <button className="btn-primary btn-primary--accent" onClick={handleSaveRowEdit} style={{ flex: 1 }}>Guardar</button>
-                  <button className="btn-secondary" onClick={cancelRowEdit}>Cancelar</button>
+                  <button className="btn-primary btn-primary--accent" onClick={handleSaveRowEdit} style={{ flex: 1 }}>
+                    Guardar
+                  </button>
+                  <button className="btn-secondary" onClick={cancelRowEdit}>
+                    Cancelar
+                  </button>
                 </div>
               </div>
             );
@@ -224,6 +284,18 @@ export default function FixedExpenses({ data, addRow, deleteRow, saveRowEdit, to
           <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: 0.5 }}>Total mensual</span>
           <div style={{ fontSize: 14, fontWeight: 700 }}>{fmt(total)}</div>
         </div>
+      )}
+
+      {/* 🆕 Modal de gestión de categorías */}
+      {showCategoryManager && canManageCategories && (
+        <CategoryManager
+          tipo="fixed"
+          customCategories={data.customCategories}
+          onAdd={addCategory}
+          onUpdate={updateCategory}
+          onDelete={deleteCategory}
+          onClose={() => setShowCategoryManager(false)}
+        />
       )}
     </Section>
   );
