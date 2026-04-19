@@ -1,9 +1,9 @@
 // ══════════════════════════════════════════════
 // 🏷️ Hook useCategories
-// Fusiona las categorías por defecto con las custom del usuario
-// para un tipo concreto ("fixed" | "variable").
+// Fusiona las categorías por defecto del tipo indicado con TODAS las
+// categorías custom del usuario (globales, sin filtrar por tipo).
 // Devuelve un array de strings "emoji Nombre" listo para usar
-// en un <select> (mantiene la forma actual de los datos).
+// en un <select>.
 // ══════════════════════════════════════════════
 import { useMemo } from "react";
 import { getDefaultCategories } from "../utils/categoryDefaults.js";
@@ -19,27 +19,32 @@ function buildLabel(cat) {
 
 /**
  * Hook principal.
- * @param {"fixed" | "variable"} tipo - El tipo de categoría a devolver.
+ * @param {"fixed" | "variable"} tipo - Determina qué defaults incluir.
+ *   Las custom se incluyen TODAS, independientemente de su tipo original.
  * @param {Array} customCategories - array completo de `data.customCategories`.
  * @returns {{
  *   categories: string[],         // lista unificada para el <select>
- *   customOfType: Array,          // solo las custom del tipo (para gestión)
- *   defaults: string[],           // solo las default (para bloquear borrado)
+ *   customOfType: Array,          // TODAS las custom (no filtradas por tipo)
+ *   defaults: string[],           // solo las default del tipo (para bloquear borrado)
  * }}
  */
 export default function useCategories(tipo, customCategories) {
   return useMemo(() => {
     const defaults = getDefaultCategories(tipo);
-    const customOfType = (customCategories || []).filter((c) => c.tipo === tipo);
+
+    // 🌐 Categorías custom: TODAS, sin filtrar por tipo — son globales.
+    // Mantenemos la misma prop (customOfType) por compatibilidad con el
+    // resto del código, pero ahora contiene todas las custom del usuario.
+    const allCustom = (customCategories || []);
 
     // Construir labels de las custom y eliminar duplicados contra los defaults
-    const customLabels = customOfType
+    const customLabels = allCustom
       .map(buildLabel)
       .filter((label) => !defaults.includes(label));
 
     return {
       categories: [...defaults, ...customLabels],
-      customOfType,
+      customOfType: allCustom,
       defaults,
     };
   }, [tipo, customCategories]);
