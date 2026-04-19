@@ -2,20 +2,11 @@ import { useState } from "react";
 import Section from "./Section.jsx";
 import ActionButtons from "./shared/ActionButtons.jsx";
 import BudgetPanel from "./BudgetPanel.jsx";
+import CategoryManager from "./CategoryManager.jsx";
+import useCategories from "../hooks/useCategories.js";
 import { fmt, fmtDate, todayISO, formatMonthLabel } from "../utils/format.js";
 import { dateToFinancialMonth } from "../utils/cycle.js";
 import { calcBudgetUsage } from "../utils/finance.js";
-
-const CATEGORIES = [
-  "🛒 Supermercado",
-  "⛽ Transporte",
-  "🏠 Hogar",
-  "🍽️ Restaurantes",
-  "👕 Ropa",
-  "🏥 Salud",
-  "🎉 Ocio",
-  "📦 Otros",
-];
 
 export default function VariableExpenses({
   filteredVarExpenses,
@@ -26,18 +17,29 @@ export default function VariableExpenses({
   setAddingTo,
   addingTo,
   mobileMode,
-  // Nuevas props para presupuesto
+  // Props para presupuesto
   data,
   addOrUpdateBudget,
   removeBudget,
   copyBudgetsFromPrevCycle,
   getPrevCycle,
+  // 🆕 CRUD de categorías custom (opcional: si no llega, se oculta el botón de gestión)
+  addCategory,
+  updateCategory,
+  deleteCategory,
 }) {
   const [newRow, setNewRow] = useState({});
   const [editingRow, setEditingRow] = useState(null);
   const [showBudget, setShowBudget] = useState(false);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
 
   const total = filteredVarExpenses.reduce((s, v) => s + (v.monto || 0), 0);
+
+  // 🆕 Lista unificada de categorías (defaults + custom del usuario)
+  const { categories } = useCategories("variable", data?.customCategories);
+
+  // Indica si están disponibles las funciones de gestión (para enseñar el botón)
+  const canManageCategories = typeof addCategory === "function";
 
   // Calcular estado del presupuesto global (para el chip de la cabecera)
   const budgets = data?.budgets || [];
@@ -90,6 +92,39 @@ export default function VariableExpenses({
     if (success) setAddingTo(null);
   };
 
+  // Selector de categoría reutilizable + botón de gestión
+  const CategorySelector = ({ value, onChange }) => (
+    <div style={{ display: "flex", gap: 6 }}>
+      <select
+        className="sheet-input"
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ flex: 1 }}
+      >
+        <option value="">— Categoría —</option>
+        {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+      </select>
+      {canManageCategories && (
+        <button
+          type="button"
+          onClick={() => setShowCategoryManager(true)}
+          title="Gestionar categorías"
+          style={{
+            padding: "0 12px",
+            background: "var(--bg-surface)",
+            border: "1.5px solid var(--border-default)",
+            borderRadius: "var(--radius-md)",
+            fontSize: 14,
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        >
+          ⚙️
+        </button>
+      )}
+    </div>
+  );
+
   const AddForm = (
     <div style={{
       background: "var(--bg-subtle)",
@@ -105,10 +140,12 @@ export default function VariableExpenses({
         <input className="sheet-input" type="number" placeholder="Monto €" value={newRow.monto || ""} onChange={(e) => setNewRow({ ...newRow, monto: e.target.value })} style={{ flex: 1 }} />
         <input className="sheet-input" type="date" value={newRow.fecha || ""} onChange={(e) => setNewRow({ ...newRow, fecha: e.target.value })} style={{ flex: 1, colorScheme: "light dark" }} />
       </div>
-      <select className="sheet-input" value={newRow.categoria || ""} onChange={(e) => setNewRow({ ...newRow, categoria: e.target.value })}>
-        <option value="">— Categoría —</option>
-        {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-      </select>
+
+      <CategorySelector
+        value={newRow.categoria}
+        onChange={(v) => setNewRow({ ...newRow, categoria: v })}
+      />
+
       <button className="btn-primary btn-primary--accent" onClick={handleSaveNew} style={{ marginTop: 4 }}>
         Añadir gasto
       </button>
@@ -160,6 +197,9 @@ export default function VariableExpenses({
           removeBudget={removeBudget}
           copyBudgetsFromPrevCycle={copyBudgetsFromPrevCycle}
           getPrevCycle={getPrevCycle}
+          // 🆕 Pasamos la lista unificada para que el selector de "nuevo presupuesto"
+          // incluya también las categorías custom del usuario
+          allCategories={categories}
         />
       )}
 
@@ -183,10 +223,12 @@ export default function VariableExpenses({
                   <input className="sheet-input" type="number" value={rowField("monto")} onChange={(e) => setRowField("monto", parseFloat(e.target.value) || 0)} style={{ flex: 1 }} />
                   <input className="sheet-input" type="date" value={rowField("fecha")} onChange={(e) => setRowField("fecha", e.target.value)} style={{ flex: 1, colorScheme: "light dark" }} />
                 </div>
-                <select className="sheet-input" value={rowField("categoria")} onChange={(e) => setRowField("categoria", e.target.value)}>
-                  <option value="">— Categoría —</option>
-                  {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
+
+                <CategorySelector
+                  value={rowField("categoria")}
+                  onChange={(v) => setRowField("categoria", v)}
+                />
+
                 <div style={{ display: "flex", gap: 6 }}>
                   <button className="btn-primary btn-primary--accent" onClick={handleSaveRowEdit} style={{ flex: 1 }}>Guardar</button>
                   <button className="btn-secondary" onClick={cancelRowEdit}>Cancelar</button>
@@ -237,6 +279,18 @@ export default function VariableExpenses({
           <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: 0.5 }}>Total</span>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--category-expense)" }}>{fmt(total)}</div>
         </div>
+      )}
+
+      {/* 🆕 Modal de gestión de categorías */}
+      {showCategoryManager && canManageCategories && (
+        <CategoryManager
+          tipo="variable"
+          customCategories={data?.customCategories}
+          onAdd={addCategory}
+          onUpdate={updateCategory}
+          onDelete={deleteCategory}
+          onClose={() => setShowCategoryManager(false)}
+        />
       )}
     </Section>
   );
