@@ -1,12 +1,16 @@
 // ══════════════════════════════════════════════
 // 🏷️ CategoryManager
-// Modal reutilizable para gestionar categorías custom.
-// Soporta ambos tipos ("fixed" | "variable") vía prop `tipo`.
-// Las categorías por defecto aparecen bloqueadas con candado (no se borran).
-// Las custom se pueden añadir, editar emoji/nombre y eliminar.
+// Modal para gestionar categorías custom.
+// Las categorías custom son GLOBALES: se ven en todas las secciones.
+// Las default se listan por tipo (fijos / variables) y están bloqueadas.
+// La prop `tipo` determina el tipo con el que se guardará una nueva
+// categoría custom, pero una vez creada estará disponible en todos lados.
 // ══════════════════════════════════════════════
 import { useState } from "react";
-import { getDefaultCategories } from "../utils/categoryDefaults.js";
+import {
+  DEFAULT_FIXED_CATEGORIES,
+  DEFAULT_VARIABLE_CATEGORIES,
+} from "../utils/categoryDefaults.js";
 
 // Sugerencias de emojis rápidos para el picker simplificado
 const EMOJI_SUGERIDOS = [
@@ -16,7 +20,7 @@ const EMOJI_SUGERIDOS = [
 ];
 
 export default function CategoryManager({
-  tipo,             // "fixed" | "variable"
+  tipo,             // "fixed" | "variable" — tipo con el que se guardarán nuevas
   customCategories, // array completo de data.customCategories
   onAdd,            // (cat) => boolean
   onUpdate,         // (id, fields) => boolean
@@ -24,8 +28,8 @@ export default function CategoryManager({
   onClose,          // () => void
   title,            // texto del header, opcional
 }) {
-  const defaults = getDefaultCategories(tipo);
-  const customOfType = (customCategories || []).filter((c) => c.tipo === tipo);
+  // Todas las custom son globales: no filtramos por tipo
+  const todasCustom = customCategories || [];
 
   // Estado del formulario de alta
   const [showAddForm, setShowAddForm] = useState(false);
@@ -47,6 +51,8 @@ export default function CategoryManager({
   };
 
   const handleAdd = () => {
+    // Se guarda con el `tipo` del contexto donde se crea, pero al ser
+    // las custom globales da igual desde dónde la crees: la verás en todas.
     const ok = onAdd({ tipo, nombre: newNombre, emoji: newEmoji });
     if (ok) resetAddForm();
   };
@@ -78,8 +84,47 @@ export default function CategoryManager({
     setConfirmDeleteId(null);
   };
 
-  const tituloFinal =
-    title || (tipo === "fixed" ? "Categorías de gastos fijos" : "Categorías de gastos variables");
+  const tituloFinal = title || "Mis categorías";
+
+  // Bloque reutilizable para un grupo de defaults
+  const DefaultsBlock = ({ label, items }) => (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{
+        fontSize: 10,
+        fontWeight: 700,
+        color: "var(--text-tertiary)",
+        textTransform: "uppercase",
+        letterSpacing: 0.06,
+        marginBottom: 6,
+      }}>
+        {label}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {items.map((it) => (
+          <div
+            key={it}
+            style={{
+              padding: "10px 12px",
+              background: "var(--bg-surface)",
+              borderRadius: "var(--radius-sm)",
+              border: "1px solid var(--border-subtle)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              fontSize: 13,
+              color: "var(--text-primary)",
+              fontWeight: 500,
+            }}
+          >
+            <span>{it}</span>
+            <span style={{ fontSize: 12, color: "var(--text-tertiary)" }} title="Categoría por defecto">
+              🔒
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -99,7 +144,7 @@ export default function CategoryManager({
             marginBottom: 14,
             lineHeight: 1.5,
           }}>
-            Las categorías por defecto (🔒) siempre están disponibles. Puedes añadir las tuyas propias.
+            Las categorías que crees aquí estarán disponibles en todas las secciones (gastos fijos y variables). Las categorías por defecto (🔒) no se pueden eliminar.
           </div>
 
           {/* Botón añadir nueva */}
@@ -215,7 +260,7 @@ export default function CategoryManager({
             </div>
           )}
 
-          {/* Lista: defaults primero (bloqueadas) */}
+          {/* Lista: custom del usuario (primero, porque son las que más le importan) */}
           <div style={{
             fontSize: 10,
             fontWeight: 700,
@@ -224,47 +269,10 @@ export default function CategoryManager({
             letterSpacing: 0.06,
             marginBottom: 6,
           }}>
-            Categorías por defecto
+            Tus categorías ({todasCustom.length})
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 16 }}>
-            {defaults.map((label) => (
-              <div
-                key={label}
-                style={{
-                  padding: "10px 12px",
-                  background: "var(--bg-surface)",
-                  borderRadius: "var(--radius-sm)",
-                  border: "1px solid var(--border-subtle)",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  fontSize: 13,
-                  color: "var(--text-primary)",
-                  fontWeight: 500,
-                }}
-              >
-                <span>{label}</span>
-                <span style={{ fontSize: 12, color: "var(--text-tertiary)" }} title="Categoría por defecto">
-                  🔒
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {/* Lista: custom del usuario */}
-          <div style={{
-            fontSize: 10,
-            fontWeight: 700,
-            color: "var(--text-tertiary)",
-            textTransform: "uppercase",
-            letterSpacing: 0.06,
-            marginBottom: 6,
-          }}>
-            Tus categorías ({customOfType.length})
-          </div>
-
-          {customOfType.length === 0 ? (
+          {todasCustom.length === 0 ? (
             <div style={{
               padding: 20,
               textAlign: "center",
@@ -272,12 +280,13 @@ export default function CategoryManager({
               fontSize: 12,
               background: "var(--bg-subtle)",
               borderRadius: "var(--radius-sm)",
+              marginBottom: 16,
             }}>
               Aún no has creado ninguna categoría personalizada
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {customOfType.map((cat) => {
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 16 }}>
+              {todasCustom.map((cat) => {
                 const isEditing = editingId === cat.id;
                 const isConfirmingDelete = confirmDeleteId === cat.id;
                 const emoji = cat.emoji || "📦";
@@ -400,17 +409,27 @@ export default function CategoryManager({
             </div>
           )}
 
+          {/* Defaults agrupadas por tipo */}
+          <DefaultsBlock
+            label="Por defecto · gastos fijos"
+            items={DEFAULT_FIXED_CATEGORIES}
+          />
+          <DefaultsBlock
+            label="Por defecto · gastos variables"
+            items={DEFAULT_VARIABLE_CATEGORIES}
+          />
+
           {/* Nota al pie */}
           <div style={{
             fontSize: 11,
             color: "var(--text-tertiary)",
-            marginTop: 18,
+            marginTop: 6,
             lineHeight: 1.5,
             padding: "8px 10px",
             background: "var(--bg-subtle)",
             borderRadius: "var(--radius-sm)",
           }}>
-            💡 Al eliminar una categoría custom, los gastos que la usaban conservarán el nombre como texto, pero ya no podrás seleccionarla de nuevo.
+            💡 Tus categorías funcionan como globales: aparecen tanto en gastos fijos como en variables. Las categorías por defecto siguen separadas por contexto.
           </div>
         </div>
       </div>
