@@ -1,6 +1,6 @@
 // ══════════════════════════════════════════════
-// 📈 Tarjetas de métricas financieras
-// Muestra: tasa de ahorro, ratio de endeudamiento, deuda total
+// 📈 Tarjetas de métricas financieras (bloque superior)
+// Muestra: Balance del ciclo, Ratio de endeudamiento, Deuda total
 // Usado tanto en Dashboard desktop como en MobileSummary
 // ══════════════════════════════════════════════
 import { fmt } from "../utils/format.js";
@@ -9,21 +9,31 @@ import {
   calcDebtRatio,
   evalDebtRatio,
   calcDebtTotals,
+  calcExpenseBreakdown,
 } from "../utils/finance.js";
+import InfoHint from "./shared/InfoHint.jsx";
 
 export default function MetricsCards({ data, selectedMonth, compact }) {
   if (!data) return null;
 
   const metrics = calcMonthlyMetrics(data, selectedMonth);
+  const breakdown = calcExpenseBreakdown(data, selectedMonth);
   const ratio = calcDebtRatio(metrics.cuotasDeuda, metrics.ingresos);
   const ratioEval = evalDebtRatio(ratio);
   const debtTotals = calcDebtTotals(data.debts || []);
 
-  // Color de la tasa de ahorro
-  const ahorroColor =
-    metrics.tasaAhorro >= 20 ? "success"
-    : metrics.tasaAhorro >= 10 ? "warning"
-    : metrics.tasaAhorro > 0 ? "warning"
+  // Balance real del ciclo: ingresos − egresos totales
+  const balanceCiclo = metrics.ingresos - breakdown.egresosTotales;
+
+  // Estado del balance (etiqueta + color)
+  const balanceLabel =
+    balanceCiclo > 0 ? "Superávit"
+    : balanceCiclo === 0 ? "Equilibrio"
+    : "Déficit";
+
+  const balanceColorKey =
+    balanceCiclo > 0 ? "success"
+    : balanceCiclo === 0 ? "warning"
     : "danger";
 
   const colorMap = {
@@ -32,33 +42,38 @@ export default function MetricsCards({ data, selectedMonth, compact }) {
     danger: { fg: "var(--danger)", bg: "var(--danger-bg)", text: "var(--danger-text)" },
   };
 
-  // Etiqueta descriptiva de la tasa de ahorro
-  const ahorroLabel =
-    metrics.tasaAhorro >= 20 ? "Excelente"
-    : metrics.tasaAhorro >= 10 ? "Aceptable"
-    : metrics.tasaAhorro > 0 ? "Bajo"
-    : "Sin ahorro";
-
   const cards = [
     {
-      label: "Tasa de ahorro",
-      icon: "💰",
-      value: `${metrics.tasaAhorro.toFixed(1)}%`,
-      sub: `${fmt(metrics.ahorroReal)} este ciclo`,
-      tag: ahorroLabel,
-      color: colorMap[ahorroColor],
+      label: "Balance del ciclo",
+      icon: "⚖️",
+      value: fmt(balanceCiclo),
+      sub: `${fmt(metrics.ingresos)} entran · ${fmt(breakdown.egresosTotales)} salen`,
+      tag: balanceLabel,
+      color: colorMap[balanceColorKey],
+      info: {
+        title: "Balance del ciclo",
+        description:
+          "Es lo que queda tras cubrir todos tus egresos. Positivo = ahorras. Negativo = gastas más de lo que ingresas.",
+        formula: "Ingresos − Egresos Totales",
+      },
     },
     {
       label: "Ratio endeudamiento",
-      icon: "⚖️",
+      icon: "💳",
       value: metrics.ingresos > 0 ? `${ratio.toFixed(1)}%` : "—",
       sub: metrics.ingresos > 0 ? `${fmt(metrics.cuotasDeuda)} en cuotas` : "Sin ingresos",
       tag: ratioEval.label,
       color: colorMap[ratioEval.color] || colorMap.success,
+      info: {
+        title: "Ratio de endeudamiento",
+        description:
+          "Qué porcentaje de tus ingresos se va en cuotas de deuda. Saludable < 20%, aceptable < 35%, crítico > 50%.",
+        formula: "(Cuotas de deuda ÷ Ingresos) × 100",
+      },
     },
     {
       label: "Deuda total",
-      icon: "💳",
+      icon: "🏦",
       value: fmt(debtTotals.total),
       sub: debtTotals.activeCount > 0
         ? `${debtTotals.activeCount} ${debtTotals.activeCount === 1 ? "deuda activa" : "deudas activas"}`
@@ -67,6 +82,12 @@ export default function MetricsCards({ data, selectedMonth, compact }) {
       color: debtTotals.total > 0
         ? { fg: "var(--category-debt)", bg: "var(--category-debt-bg)", text: "var(--category-debt)" }
         : colorMap.success,
+      info: {
+        title: "Deuda total",
+        description:
+          "Suma del saldo pendiente de todas tus deudas activas (tarjetas, préstamos, cuotas). No incluye pagos futuros planificados, solo lo que aún debes.",
+        formula: "Σ saldos pendientes de deudas activas",
+      },
     },
   ];
 
@@ -84,41 +105,58 @@ export default function MetricsCards({ data, selectedMonth, compact }) {
             background: "var(--bg-surface)",
             border: "1px solid var(--border-subtle)",
             borderRadius: "var(--radius-md)",
-            padding: compact ? 10 : 14,
+            padding: compact ? "10px 10px" : "14px 16px",
             display: "flex",
             flexDirection: "column",
-            gap: compact ? 4 : 6,
+            gap: compact ? 2 : 4,
+            position: "relative",
             minWidth: 0,
+            overflow: "visible", // necesario para que el popover/tooltip no quede recortado
           }}
         >
-          {/* Cabecera: icono + label */}
+          {/* Icono de información en la esquina superior derecha */}
+          {c.info && (
+            <div style={{ position: "absolute", top: 6, right: 8 }}>
+              <InfoHint {...c.info} align="right" />
+            </div>
+          )}
+
           <div style={{
-            display: "flex", alignItems: "center", gap: 6,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
             fontSize: compact ? 10 : 11,
             color: "var(--text-secondary)",
-            fontWeight: 600,
+            fontWeight: 700,
             textTransform: "uppercase",
             letterSpacing: 0.4,
+            paddingRight: 22, // deja hueco para el icono ⓘ
+            minWidth: 0,
           }}>
-            <span style={{ fontSize: compact ? 12 : 14 }}>{c.icon}</span>
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <span>{c.icon}</span>
+            <span style={{
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              minWidth: 0,
+            }}>
               {c.label}
             </span>
           </div>
 
-          {/* Valor principal */}
           <div style={{
             fontSize: compact ? 18 : 22,
-            fontWeight: 800,
+            fontWeight: 700,
             color: c.color.fg,
-            fontFeatureSettings: "'tnum'",
             letterSpacing: "-0.02em",
-            lineHeight: 1.1,
+            fontFeatureSettings: "'tnum'",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
           }}>
             {c.value}
           </div>
 
-          {/* Sub-texto */}
           <div style={{
             fontSize: compact ? 10 : 11,
             color: "var(--text-tertiary)",
@@ -129,19 +167,16 @@ export default function MetricsCards({ data, selectedMonth, compact }) {
             {c.sub}
           </div>
 
-          {/* Tag/badge opcional */}
           {c.tag && (
             <div style={{
-              display: "inline-flex",
               alignSelf: "flex-start",
+              marginTop: 4,
               padding: "2px 8px",
               borderRadius: "var(--radius-pill)",
               background: c.color.bg,
               color: c.color.text,
               fontSize: 10,
               fontWeight: 700,
-              letterSpacing: 0.2,
-              marginTop: 2,
             }}>
               {c.tag}
             </div>
