@@ -177,6 +177,184 @@ function evalDebtRatio(ratio) {
 }
 
 // ══════════════════════════════════════════════
+// 🆕 CLASIFICACIÓN CF / CV / DISCRECIONAL
+// ══════════════════════════════════════════════
+
+/**
+ * Constantes de tipos de gasto según el modelo contable CF / CV / Discrecional.
+ *  - CF: Costo Fijo. No cambia aunque no uses nada.
+ *  - CV: Costo Variable. Necesario pero varía con el uso.
+ *  - Discrecional: opcional, no esencial, reducible.
+ */
+const TIPO_GASTO = {
+  CF: "CF",
+  CV: "CV",
+  DISCRECIONAL: "Discrecional",
+};
+
+// Mapa de categoría → tipo de gasto para GASTOS FIJOS.
+// Se evalúa comparando el nombre de la categoría (puede venir con emoji delante).
+const FIXED_CATEGORY_TO_TIPO = {
+  "Vivienda": TIPO_GASTO.CF,
+  "Seguros": TIPO_GASTO.CF,
+  "Educación": TIPO_GASTO.CF,
+  "Servicios": TIPO_GASTO.CV,
+  "Transporte": TIPO_GASTO.CV,
+  "Suscripciones": TIPO_GASTO.DISCRECIONAL,
+};
+
+// Mapa de categoría → tipo de gasto para GASTOS VARIABLES.
+const VARIABLE_CATEGORY_TO_TIPO = {
+  "Supermercado": TIPO_GASTO.CV,
+  "Transporte": TIPO_GASTO.CV,
+  "Salud": TIPO_GASTO.CV,
+  "Hogar": TIPO_GASTO.CV,
+  "Restaurantes": TIPO_GASTO.DISCRECIONAL,
+  "Ropa": TIPO_GASTO.DISCRECIONAL,
+  "Ocio": TIPO_GASTO.DISCRECIONAL,
+};
+
+/**
+ * Extrae la palabra significativa de una categoría tipo "🛒 Supermercado".
+ * Quita el emoji inicial y espacios sobrantes.
+ */
+function extractCategoryName(categoria) {
+  if (!categoria || typeof categoria !== "string") return "";
+  // Elimina el primer token si no contiene letras (emoji) y devuelve el resto
+  const parts = categoria.trim().split(/\s+/);
+  if (parts.length > 1 && !/[a-záéíóúñA-ZÁÉÍÓÚÑ]/.test(parts[0])) {
+    return parts.slice(1).join(" ");
+  }
+  return parts.join(" ");
+}
+
+/**
+ * Infiere el tipo de gasto (CF / CV / Discrecional) para un gasto concreto.
+ * Si el gasto ya tiene el campo `tipoGasto` definido, lo respeta.
+ * Si no, aplica la heurística por categoría + origen.
+ *
+ * @param {object} gasto - objeto con { categoria, tipoGasto?, ... }
+ * @param {"fixed"|"variable"|"debt"|"manual"} origen
+ * @returns {"CF"|"CV"|"Discrecional"}
+ */
+function inferTipoGasto(gasto, origen) {
+  // 1. Si ya está clasificado manualmente, respeta
+  if (gasto?.tipoGasto && Object.values(TIPO_GASTO).includes(gasto.tipoGasto)) {
+    return gasto.tipoGasto;
+  }
+
+  // 2. Deudas: siempre CF
+  if (origen === "debt") return TIPO_GASTO.CF;
+
+  // 3. Por categoría
+  const catName = extractCategoryName(gasto?.categoria);
+
+  if (origen === "fixed") {
+    // Fallback conservador: si es gasto fijo sin categoría reconocible, se asume CF
+    return FIXED_CATEGORY_TO_TIPO[catName] || TIPO_GASTO.CF;
+  }
+
+  if (origen === "variable") {
+    // Fallback conservador: si es gasto variable sin categoría reconocible, se asume CV
+    return VARIABLE_CATEGORY_TO_TIPO[catName] || TIPO_GASTO.CV;
+  }
+
+  // 4. Pagos manuales sin origen: CV (gasto puntual necesario)
+  return TIPO_GASTO.CV;
+}
+
+/**
+ * Desglose del ciclo en CF / CV / Discrecional + totales derivados.
+ *
+ * Clasifica cada movimiento del ciclo según el modelo contable:
+ *  - CF (Costo Fijo): gastos fijos clasificados como CF + cuotas de deuda
+ *  - CV (Costo Variable): gastos variables clasificados como CV + fijos CV (ej. luz)
+ *  - Discrecional: gastos etiquetados como Discrecional (fijos o variables)
+ *
+ * Devuelve:
+ *  - cf, cv, discrecional: sumas por tipo
+ *  - ct (costo total): CF + CV — punto de equilibrio del hogar
+ *  - egresosTotales: CF + CV + Discrecional — todo lo que sale
+ *  - pagosManuales: importe de pagos sin origen (clasificados como CV)
+ */
+function calcExpenseBreakdown(data, cycleMK) {
+  const empty = {
+    cf: 0,
+    cv: 0,
+    discrecional: 0,
+    ct: 0,
+    egresosTotales: 0,
+    pagosManuales: 0,
+  };
+  if (!data || !cycleMK) return empty;
+
+  let cf = 0;
+  let cv = 0;
+  let discrecional = 0;
+
+  // Gastos fijos: buscamos los pagos del ciclo con fixedExpenseId
+  // y recuperamos la categoría desde el fixedExpense original.
+  const fixedExpensesById = {};
+  (data.fixedExpenses || []).forEach((f) => {
+    fixedExpensesById[f.id] = f;
+  });
+
+  const payments = (data.payments || []).filter((p) => p.month === cycleMK);
+
+  for (const p of payments) {
+    const monto = Number(p.monto) || 0;
+
+    if (p.debtId) {
+      // Cuota de deuda → CF
+      cf += monto;
+      continue;
+    }
+
+    if (p.fixedExpenseId) {
+      // Pago de gasto fijo → buscar categoría y clasificar
+      const fixed = fixedExpensesById[p.fixedExpenseId];
+      const tipo = inferTipoGasto(fixed || p, "fixed");
+      if (tipo === TIPO_GASTO.CF) cf += monto;
+      else if (tipo === TIPO_GASTO.DISCRECIONAL) discrecional += monto;
+      else cv += monto;
+      continue;
+    }
+
+    // Pago manual (sin origen) → CV por defecto
+    cv += monto;
+  }
+
+  // Gastos variables del ciclo
+  const variableExpenses = (data.variableExpenses || []).filter(
+    (v) => v.month === cycleMK
+  );
+
+  for (const v of variableExpenses) {
+    const monto = Number(v.monto) || 0;
+    const tipo = inferTipoGasto(v, "variable");
+    if (tipo === TIPO_GASTO.DISCRECIONAL) discrecional += monto;
+    else if (tipo === TIPO_GASTO.CF) cf += monto;
+    else cv += monto;
+  }
+
+  const pagosManuales = payments
+    .filter((p) => !p.fixedExpenseId && !p.debtId)
+    .reduce((s, p) => s + (Number(p.monto) || 0), 0);
+
+  const ct = cf + cv;
+  const egresosTotales = cf + cv + discrecional;
+
+  return {
+    cf: r2(cf),
+    cv: r2(cv),
+    discrecional: r2(discrecional),
+    ct: r2(ct),
+    egresosTotales: r2(egresosTotales),
+    pagosManuales: r2(pagosManuales),
+  };
+}
+
+// ══════════════════════════════════════════════
 // PRESUPUESTO
 // ══════════════════════════════════════════════
 
@@ -307,4 +485,8 @@ export {
   calcGoalProgress,
   suggestEmergencyFund,
   calcMonthlyTarget,
+  // 🆕 Clasificación CF / CV / Discrecional
+  TIPO_GASTO,
+  inferTipoGasto,
+  calcExpenseBreakdown,
 };
