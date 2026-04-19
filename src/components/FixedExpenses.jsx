@@ -14,7 +14,7 @@ export default function FixedExpenses({
   setAddingTo,
   addingTo,
   mobileMode,
-  // 🆕 CRUD de categorías custom (opcional: si no llega, se oculta el botón de gestión)
+  // CRUD de categorías custom (opcional: si no llega, se oculta el botón de gestión)
   addCategory,
   updateCategory,
   deleteCategory,
@@ -27,7 +27,7 @@ export default function FixedExpenses({
   const total = expenses.reduce((s, f) => s + (f.monto || 0), 0);
   const totalRecurrente = expenses.filter((f) => f.recurrente).reduce((s, f) => s + (f.monto || 0), 0);
 
-  // 🆕 Lista unificada de categorías (defaults + custom del usuario)
+  // Lista unificada de categorías (defaults + custom del usuario)
   const { categories } = useCategories("fixed", data.customCategories);
 
   // Indica si están disponibles las funciones de gestión (para enseñar el botón)
@@ -177,7 +177,6 @@ export default function FixedExpenses({
           const catText = f.categoria ? f.categoria.replace(/^[^\s]+\s/, "") : null;
 
           if (re) {
-            // Fila en modo edición
             return (
               <div key={f.id} style={{
                 background: "var(--bg-subtle)", borderRadius: "var(--radius-md)",
@@ -212,6 +211,17 @@ export default function FixedExpenses({
                   value={rowField("categoria")}
                   onChange={(v) => setRowField("categoria", v)}
                 />
+
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-secondary)" }}>
+                  <button
+                    type="button"
+                    className={`toggle ${rowField("recurrente") ? "toggle--on" : ""}`}
+                    onClick={() => setRowField("recurrente", !rowField("recurrente"))}
+                  >
+                    <div className="toggle__knob" />
+                  </button>
+                  <span style={{ fontWeight: 600 }}>Automático cada ciclo</span>
+                </label>
 
                 <div style={{ display: "flex", gap: 6 }}>
                   <button className="btn-primary btn-primary--accent" onClick={handleSaveRowEdit} style={{ flex: 1 }}>
@@ -286,7 +296,7 @@ export default function FixedExpenses({
         </div>
       )}
 
-      {/* 🆕 Modal de gestión de categorías */}
+      {/* Modal de gestión de categorías */}
       {showCategoryManager && canManageCategories && (
         <CategoryManager
           tipo="fixed"
