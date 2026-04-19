@@ -3,6 +3,7 @@
 // Carga, guarda y gestiona todo el CRUD
 // + Auto-generación de pagos recurrentes
 // + Presupuesto, metas de ahorro, pagos extra a deudas
+// + Categorías personalizadas (custom)
 // ══════════════════════════════════════════════
 import { useState, useEffect, useCallback, useRef } from "react";
 import { db, ref, onValue } from "../firebase.js";
@@ -22,6 +23,7 @@ import {
   validateSavingsGoal,
   validateSavingsDeposit,
   validateDebtExtraPayment,
+  validateCustomCategory,
   LIMITS,
 } from "../validation.js";
 import { genId, monthKey, addMonths } from "../utils/format.js";
@@ -37,6 +39,7 @@ const emptyData = () => ({
   savingsGoals: [],
   savingsDeposits: [],
   debtPayments: [],
+  customCategories: [], // 🆕 categorías personalizadas del usuario
 });
 
 /**
@@ -598,10 +601,6 @@ export default function useFinancialData(user) {
   // 🆕 PAGOS EXTRA A DEUDAS (fuera del plan)
   // ══════════════════════════════════════════════
 
-  /**
-   * Registra un pago extra a una deuda (amortización anticipada)
-   * y reduce el saldo pendiente de la deuda.
-   */
   const addDebtExtraPayment = useCallback(
     (debtId, monto, fecha, nota = "") => {
       if (!data) return false;
@@ -666,6 +665,111 @@ export default function useFinancialData(user) {
   );
 
   // ══════════════════════════════════════════════
+  // 🆕 CATEGORÍAS PERSONALIZADAS (custom)
+  // ══════════════════════════════════════════════
+
+  /**
+   * Añade una categoría custom.
+   * Si ya existe una con el mismo label (emoji + nombre) para ese tipo,
+   * devuelve false con aviso — no duplicamos.
+   */
+  const addCategory = useCallback(
+    (cat) => {
+      if (!data) return false;
+      if (!canAddMore("customCategories", data)) {
+        setValidationError(`Máximo ${LIMITS.MAX_CUSTOM_CATEGORIES} categorías personalizadas`);
+        return false;
+      }
+      const validation = validateCustomCategory(cat);
+      if (!validation.valid) {
+        setValidationError(validation.errors.join(". "));
+        return false;
+      }
+      const clean = validation.data;
+      const emoji = clean.emoji || "📦";
+      const newLabel = `${emoji} ${clean.nombre}`;
+
+      // Evitar duplicados por label dentro del mismo tipo
+      const duplicado = (data.customCategories || []).some(
+        (c) => c.tipo === clean.tipo && `${c.emoji || "📦"} ${c.nombre}` === newLabel
+      );
+      if (duplicado) {
+        setValidationError("Ya existe una categoría con ese nombre");
+        return false;
+      }
+
+      save({
+        ...data,
+        customCategories: [
+          ...(data.customCategories || []),
+          {
+            id: genId(),
+            tipo: clean.tipo,
+            nombre: clean.nombre,
+            emoji,
+            createdAt: Date.now(),
+          },
+        ],
+      });
+      setValidationError("");
+      return true;
+    },
+    [data, save]
+  );
+
+  /**
+   * Edita una categoría custom existente (nombre y/o emoji).
+   * No permite cambiar el tipo (fixed/variable) para no romper datos.
+   */
+  const updateCategory = useCallback(
+    (id, fields) => {
+      if (!data) return false;
+      const existing = (data.customCategories || []).find((c) => c.id === id);
+      if (!existing) return false;
+
+      // Fusionamos conservando el tipo original
+      const merged = {
+        tipo: existing.tipo,
+        nombre: fields.nombre !== undefined ? fields.nombre : existing.nombre,
+        emoji: fields.emoji !== undefined ? fields.emoji : existing.emoji,
+      };
+      const validation = validateCustomCategory(merged);
+      if (!validation.valid) {
+        setValidationError(validation.errors.join(". "));
+        return false;
+      }
+      const clean = validation.data;
+
+      save({
+        ...data,
+        customCategories: data.customCategories.map((c) =>
+          c.id === id
+            ? { ...c, nombre: clean.nombre, emoji: clean.emoji || "📦" }
+            : c
+        ),
+      });
+      setValidationError("");
+      return true;
+    },
+    [data, save]
+  );
+
+  /**
+   * Elimina una categoría custom. No toca los gastos que la tuvieran
+   * asignada (seguirán mostrando el string de categoría tal cual).
+   */
+  const deleteCategory = useCallback(
+    (id) => {
+      if (!data) return;
+      save({
+        ...data,
+        customCategories: (data.customCategories || []).filter((c) => c.id !== id),
+      });
+    },
+    [data, save]
+  );
+
+  // ══════════════════════════════════════════════
   // RESET
   // ══════════════════════════════════════════════
   const resetAll = useCallback(() => {
@@ -706,5 +810,9 @@ export default function useFinancialData(user) {
     deleteGoal,
     addDeposit,
     deleteDeposit,
+    // 🆕 Categorías personalizadas
+    addCategory,
+    updateCategory,
+    deleteCategory,
   };
 }
