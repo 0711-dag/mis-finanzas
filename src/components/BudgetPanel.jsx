@@ -6,18 +6,7 @@
 import { useState } from "react";
 import { fmt } from "../utils/format.js";
 import { calcBudgetUsage } from "../utils/finance.js";
-
-// Categorías disponibles (deben coincidir con VariableExpenses)
-const CATEGORIES = [
-  "🛒 Supermercado",
-  "⛽ Transporte",
-  "🏠 Hogar",
-  "🍽️ Restaurantes",
-  "👕 Ropa",
-  "🏥 Salud",
-  "🎉 Ocio",
-  "📦 Otros",
-];
+import { getDefaultCategories } from "../utils/categoryDefaults.js";
 
 export default function BudgetPanel({
   budgets,
@@ -27,12 +16,22 @@ export default function BudgetPanel({
   removeBudget,
   copyBudgetsFromPrevCycle,
   getPrevCycle,
+  // 🆕 Lista unificada de categorías (defaults + custom) inyectada por VariableExpenses.
+  // Si no llega (retrocompatibilidad), caemos a los defaults del tipo "variable".
+  allCategories,
 }) {
   const [editingCat, setEditingCat] = useState(null); // categoría en edición
   const [editValue, setEditValue] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [newCat, setNewCat] = useState("");
   const [newAmount, setNewAmount] = useState("");
+
+  // Fuente de categorías a ofrecer al crear un presupuesto:
+  // si nos pasaron `allCategories` la usamos (incluye custom),
+  // si no, defaults del tipo variable — así nunca llega array vacío.
+  const categoriesSource = (allCategories && allCategories.length > 0)
+    ? allCategories
+    : getDefaultCategories("variable");
 
   // Cálculo del uso del presupuesto por categoría
   const usage = calcBudgetUsage(budgets, variableExpenses, cycleMK);
@@ -45,7 +44,7 @@ export default function BudgetPanel({
   const yaPresupuestadas = new Set(
     categorias.filter((c) => c.presupuestado > 0).map((c) => c.categoria)
   );
-  const disponibles = CATEGORIES.filter((c) => !yaPresupuestadas.has(c));
+  const disponibles = categoriesSource.filter((c) => !yaPresupuestadas.has(c));
 
   // Guardar edición de una categoría existente
   const handleSaveEdit = (categoria) => {
