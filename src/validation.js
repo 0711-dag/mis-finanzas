@@ -10,10 +10,11 @@ const LIMITS = {
   MAX_FIXED_EXPENSES: 30,
   MAX_INCOMES: 100,
   MAX_VARIABLE_EXPENSES: 500,
-  MAX_BUDGETS: 200,            // NUEVO: presupuestos (categoría × ciclo)
-  MAX_SAVINGS_GOALS: 20,       // NUEVO: metas de ahorro
-  MAX_SAVINGS_DEPOSITS: 500,   // NUEVO: aportes a metas
-  MAX_DEBT_PAYMENTS: 500,      // NUEVO: pagos extra a deudas
+  MAX_BUDGETS: 200,            // presupuestos (categoría × ciclo)
+  MAX_SAVINGS_GOALS: 20,       // metas de ahorro
+  MAX_SAVINGS_DEPOSITS: 500,   // aportes a metas
+  MAX_DEBT_PAYMENTS: 500,      // pagos extra a deudas
+  MAX_CUSTOM_CATEGORIES: 50,   // NUEVO: categorías custom por usuario
   MAX_AMOUNT: 99_999_999,
   MAX_CUOTAS: 360,
 };
@@ -22,6 +23,7 @@ const LIMITS = {
 const DEBT_TYPES = ["tarjeta", "cuotas", "prestamo"];
 const INCOME_TYPES = ["fijo", "variable"];
 const GOAL_TYPES = ["emergencia", "personalizada"];
+const CATEGORY_TYPES = ["fixed", "variable"]; // NUEVO
 
 function sanitizeText(text, maxLen = LIMITS.MAX_TEXT_LENGTH) {
   if (typeof text !== "string") return "";
@@ -69,6 +71,7 @@ function canAddMore(section, currentData) {
     savingsGoals: LIMITS.MAX_SAVINGS_GOALS,
     savingsDeposits: LIMITS.MAX_SAVINGS_DEPOSITS,
     debtPayments: LIMITS.MAX_DEBT_PAYMENTS,
+    customCategories: LIMITS.MAX_CUSTOM_CATEGORIES, // NUEVO
   };
   const max = limits[section];
   if (!max) return true;
@@ -124,7 +127,7 @@ function validateFixedExpense(expense) {
     diaPago: sanitizeText(expense.diaPago, 10),
     monto: sanitizeAmount(expense.monto),
     recurrente: !!expense.recurrente,
-    categoria: sanitizeText(expense.categoria, 30), // NUEVO
+    categoria: sanitizeText(expense.categoria, 30),
   };
   if (!clean.concepto) errors.push("Falta el concepto");
   if (clean.monto <= 0) errors.push("El monto debe ser mayor que 0");
@@ -147,8 +150,8 @@ function validateIncome(income) {
     amount: sanitizeAmount(income.amount),
     fecha: income.fecha,
     month: income.month,
-    titular: sanitizeText(income.titular, 30) || "yo", // NUEVO, default "yo"
-    tipo,                                               // NUEVO
+    titular: sanitizeText(income.titular, 30) || "yo",
+    tipo,
   };
   if (!clean.concepto) errors.push("Falta el concepto");
   if (clean.amount <= 0) errors.push("El monto debe ser mayor que 0");
@@ -185,10 +188,6 @@ function validatePayment(payment) {
   if (clean.monto <= 0) errors.push("El monto debe ser mayor que 0");
   return { valid: errors.length === 0, errors, data: clean };
 }
-
-// ══════════════════════════════════════════════
-// NUEVOS VALIDADORES
-// ══════════════════════════════════════════════
 
 function validateBudget(budget) {
   const errors = [];
@@ -254,6 +253,36 @@ function validateDebtExtraPayment(payment) {
 }
 
 // ══════════════════════════════════════════════
+// 🆕 VALIDADOR DE CATEGORÍAS CUSTOM
+// ══════════════════════════════════════════════
+
+/**
+ * Valida una categoría personalizada creada por el usuario.
+ * - `tipo` debe ser "fixed" o "variable"
+ * - `nombre` obligatorio, máx. 25 caracteres visibles
+ * - `emoji` opcional; si falta, se usará 📦 como fallback
+ */
+function validateCustomCategory(cat) {
+  const errors = [];
+  const tipoRaw = typeof cat.tipo === "string" ? cat.tipo.toLowerCase() : "";
+  const tipo = CATEGORY_TYPES.includes(tipoRaw) ? tipoRaw : null;
+
+  const clean = {
+    tipo,
+    nombre: sanitizeText(cat.nombre, 25),
+    // El emoji puede contener caracteres como "🛡️" (con variante) → no lo sanitizamos agresivamente.
+    // Solo limitamos longitud a 4 (la mayoría de emojis caben en 2-4 code units).
+    emoji: typeof cat.emoji === "string" ? cat.emoji.trim().slice(0, 4) : "",
+  };
+
+  if (!tipo) errors.push("Tipo de categoría inválido");
+  if (!clean.nombre) errors.push("Falta el nombre de la categoría");
+  if (clean.nombre.length < 2) errors.push("El nombre es demasiado corto");
+
+  return { valid: errors.length === 0, errors, data: clean };
+}
+
+// ══════════════════════════════════════════════
 // MIGRACIÓN AUTOMÁTICA DE DATOS EXISTENTES
 // Aplica valores por defecto sin romper nada
 // ══════════════════════════════════════════════
@@ -280,11 +309,13 @@ function migrateData(rawData) {
       ...i,
     })),
     variableExpenses: rawData.variableExpenses || [],
-    // Nuevas colecciones
+    // Colecciones previas
     budgets: rawData.budgets || [],
     savingsGoals: rawData.savingsGoals || [],
     savingsDeposits: rawData.savingsDeposits || [],
     debtPayments: rawData.debtPayments || [],
+    // 🆕 Categorías custom — array vacío por defecto para usuarios existentes
+    customCategories: rawData.customCategories || [],
   };
 }
 
@@ -293,6 +324,7 @@ export {
   DEBT_TYPES,
   INCOME_TYPES,
   GOAL_TYPES,
+  CATEGORY_TYPES,
   sanitizeText,
   sanitizeAmount,
   sanitizeInteger,
@@ -309,4 +341,5 @@ export {
   validateSavingsGoal,
   validateSavingsDeposit,
   validateDebtExtraPayment,
+  validateCustomCategory,
 };
