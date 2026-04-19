@@ -326,7 +326,6 @@ export default function useFinancialData(user) {
       const newDebt = { ...cleanDebt, id: debtId };
       let newPayments = [...(data.payments || [])];
 
-      // Solo generamos plan de cuotas si es "cuotas" o "prestamo" con totalCuotas > 0
       const generaPlan =
         (cleanDebt.tipo === "cuotas" || cleanDebt.tipo === "prestamo") &&
         cleanDebt.totalCuotas > 0 &&
@@ -397,13 +396,9 @@ export default function useFinancialData(user) {
   );
 
   // ══════════════════════════════════════════════
-  // 🆕 PRESUPUESTO POR CATEGORÍA
+  // PRESUPUESTO POR CATEGORÍA
   // ══════════════════════════════════════════════
 
-  /**
-   * Crea o actualiza el presupuesto de una categoría en un ciclo.
-   * Si ya existe para (ciclo, categoría), se sobrescribe.
-   */
   const addOrUpdateBudget = useCallback(
     (cycleMK, categoria, monto) => {
       if (!data) return false;
@@ -450,10 +445,6 @@ export default function useFinancialData(user) {
     [data, save]
   );
 
-  /**
-   * Copia los presupuestos del ciclo anterior al ciclo actual.
-   * Útil al inicio de cada ciclo para no repetir trabajo.
-   */
   const copyBudgetsFromPrevCycle = useCallback(
     (targetCycleMK, sourceCycleMK) => {
       if (!data) return;
@@ -482,7 +473,7 @@ export default function useFinancialData(user) {
   );
 
   // ══════════════════════════════════════════════
-  // 🆕 METAS DE AHORRO
+  // METAS DE AHORRO
   // ══════════════════════════════════════════════
 
   const addGoal = useCallback(
@@ -497,7 +488,6 @@ export default function useFinancialData(user) {
         setValidationError(validation.errors.join(". "));
         return false;
       }
-      // Solo puede existir una meta tipo "emergencia"
       if (validation.data.tipo === "emergencia") {
         const yaHay = (data.savingsGoals || []).some((g) => g.tipo === "emergencia");
         if (yaHay) {
@@ -549,10 +539,6 @@ export default function useFinancialData(user) {
     [data, save]
   );
 
-  /**
-   * Añade un aporte a una meta. El aporte queda vinculado al ciclo
-   * en que cae la fecha.
-   */
   const addDeposit = useCallback(
     (goalId, monto, fecha, nota = "") => {
       if (!data) return false;
@@ -598,7 +584,7 @@ export default function useFinancialData(user) {
   );
 
   // ══════════════════════════════════════════════
-  // 🆕 PAGOS EXTRA A DEUDAS (fuera del plan)
+  // PAGOS EXTRA A DEUDAS (fuera del plan)
   // ══════════════════════════════════════════════
 
   const addDebtExtraPayment = useCallback(
@@ -623,7 +609,6 @@ export default function useFinancialData(user) {
       }
       const clean = validation.data;
 
-      // Reducir saldo pendiente de la deuda
       const nuevoSaldo = Math.max(0, (Number(debt.saldoPendiente) || 0) - clean.monto);
 
       save({
@@ -645,7 +630,6 @@ export default function useFinancialData(user) {
       const payment = (data.debtPayments || []).find((p) => p.id === paymentId);
       if (!payment) return;
 
-      // Revertir el saldo (sumar de vuelta)
       const debt = (data.debts || []).find((d) => d.id === payment.debtId);
       const nuevosDebts = debt
         ? data.debts.map((d) =>
@@ -719,7 +703,6 @@ export default function useFinancialData(user) {
 
   /**
    * Edita una categoría custom existente (nombre y/o emoji).
-   * No permite cambiar el tipo (fixed/variable) para no romper datos.
    */
   const updateCategory = useCallback(
     (id, fields) => {
@@ -727,7 +710,6 @@ export default function useFinancialData(user) {
       const existing = (data.customCategories || []).find((c) => c.id === id);
       if (!existing) return false;
 
-      // Fusionamos conservando el tipo original
       const merged = {
         tipo: existing.tipo,
         nombre: fields.nombre !== undefined ? fields.nombre : existing.nombre,
