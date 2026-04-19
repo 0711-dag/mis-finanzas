@@ -16,13 +16,13 @@ const EMOJI_SUGERIDOS = [
 ];
 
 export default function CategoryManager({
-  tipo,           // "fixed" | "variable"
+  tipo,             // "fixed" | "variable"
   customCategories, // array completo de data.customCategories
-  onAdd,          // (cat) => boolean
-  onUpdate,       // (id, fields) => boolean
-  onDelete,       // (id) => void
-  onClose,        // () => void
-  title,          // texto del header, opcional
+  onAdd,            // (cat) => boolean
+  onUpdate,         // (id, fields) => boolean
+  onDelete,         // (id) => void
+  onClose,          // () => void
+  title,            // texto del header, opcional
 }) {
   const defaults = getDefaultCategories(tipo);
   const customOfType = (customCategories || []).filter((c) => c.tipo === tipo);
