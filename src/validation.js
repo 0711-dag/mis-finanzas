@@ -10,10 +10,10 @@ const LIMITS = {
   MAX_FIXED_EXPENSES: 30,
   MAX_INCOMES: 100,
   MAX_VARIABLE_EXPENSES: 500,
-  MAX_BUDGETS: 200,            // presupuestos (categoría × ciclo)
-  MAX_SAVINGS_GOALS: 20,       // metas de ahorro
-  MAX_SAVINGS_DEPOSITS: 500,   // aportes a metas
-  MAX_DEBT_PAYMENTS: 500,      // pagos extra a deudas
+  MAX_BUDGETS: 200,
+  MAX_SAVINGS_GOALS: 20,
+  MAX_SAVINGS_DEPOSITS: 500,
+  MAX_DEBT_PAYMENTS: 500,
   MAX_CUSTOM_CATEGORIES: 50,   // NUEVO: categorías custom por usuario
   MAX_AMOUNT: 99_999_999,
   MAX_CUOTAS: 360,
@@ -79,7 +79,7 @@ function canAddMore(section, currentData) {
 }
 
 // ══════════════════════════════════════════════
-// VALIDADORES EXISTENTES (AMPLIADOS)
+// VALIDADORES
 // ══════════════════════════════════════════════
 
 function validateDebt(debt) {
@@ -95,7 +95,6 @@ function validateDebt(debt) {
     totalCuotas: sanitizeInteger(debt.totalCuotas),
     cuotaActual: sanitizeInteger(debt.cuotaActual),
     fechaInicio: debt.fechaInicio,
-    // Campos opcionales según tipo
     limiteCredito: sanitizeAmount(debt.limiteCredito),
     pagoMinimo: sanitizeAmount(debt.pagoMinimo),
     tasaInteres: sanitizeAmount(debt.tasaInteres),
@@ -104,13 +103,11 @@ function validateDebt(debt) {
   if (!clean.entidad) errors.push("Falta el nombre de la entidad");
   if (clean.saldoPendiente <= 0) errors.push("El saldo debe ser mayor que 0");
 
-  // Reglas específicas por tipo
   if (tipo === "cuotas" || tipo === "prestamo") {
     if (clean.totalCuotas <= 0) errors.push("Debes indicar el número total de cuotas");
     if (clean.proxCuota <= 0) errors.push("La cuota mensual debe ser mayor que 0");
     if (!isValidDate(clean.fechaInicio)) errors.push("La fecha de inicio no es válida");
   }
-  // Para tarjeta: pagoMinimo y proxCuota pueden ser 0 en algunos casos
   if (tipo === "tarjeta") {
     if (clean.limiteCredito > 0 && clean.saldoPendiente > clean.limiteCredito) {
       errors.push("El saldo no puede superar el límite de crédito");
@@ -271,7 +268,6 @@ function validateCustomCategory(cat) {
     tipo,
     nombre: sanitizeText(cat.nombre, 25),
     // El emoji puede contener caracteres como "🛡️" (con variante) → no lo sanitizamos agresivamente.
-    // Solo limitamos longitud a 4 (la mayoría de emojis caben en 2-4 code units).
     emoji: typeof cat.emoji === "string" ? cat.emoji.trim().slice(0, 4) : "",
   };
 
@@ -290,7 +286,6 @@ function migrateData(rawData) {
   if (!rawData) return rawData;
 
   return {
-    // Existentes, con nuevos campos por defecto
     debts: (rawData.debts || []).map((d) => ({
       tipo: d.tipo && DEBT_TYPES.includes(d.tipo) ? d.tipo : "cuotas",
       limiteCredito: d.limiteCredito || 0,
@@ -309,7 +304,6 @@ function migrateData(rawData) {
       ...i,
     })),
     variableExpenses: rawData.variableExpenses || [],
-    // Colecciones previas
     budgets: rawData.budgets || [],
     savingsGoals: rawData.savingsGoals || [],
     savingsDeposits: rawData.savingsDeposits || [],
