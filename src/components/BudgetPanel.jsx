@@ -16,7 +16,7 @@ export default function BudgetPanel({
   removeBudget,
   copyBudgetsFromPrevCycle,
   getPrevCycle,
-  // 🆕 Lista unificada de categorías (defaults + custom) inyectada por VariableExpenses.
+  // Lista unificada de categorías (defaults + custom) inyectada por VariableExpenses.
   // Si no llega (retrocompatibilidad), caemos a los defaults del tipo "variable".
   allCategories,
 }) {
