@@ -23,6 +23,16 @@ const DEBT_TYPE_CONFIG = {
   },
 };
 
+// Extrae el día del mes (1-31) de una fecha ISO "YYYY-MM-DD".
+// Devuelve null si la fecha no es válida.
+function getDayFromISO(iso) {
+  if (!iso || typeof iso !== "string") return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  const day = parseInt(iso.split("-")[2], 10);
+  if (isNaN(day) || day < 1 || day > 31) return null;
+  return day;
+}
+
 export default function DebtTable({ data, addDebtWithPlan, deleteRow, saveRowEdit, selectedMonth, setAddingTo, addingTo, mobileMode }) {
   const [newRow, setNewRow] = useState({});
   const [editingRow, setEditingRow] = useState(null);
@@ -171,7 +181,8 @@ export default function DebtTable({ data, addDebtWithPlan, deleteRow, saveRowEdi
             onChange={(e) => setNewRow({ ...newRow, tasaInteres: e.target.value })}
           />
           <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4, marginBottom: 10, lineHeight: 1.4 }}>
-            💡 Las tarjetas no generan un plan de cuotas automático. Actualiza el saldo manualmente al revisar tu estado de cuenta.
+            💡 Las tarjetas no generan un plan de cuotas automático.
+            Actualiza el saldo manualmente al revisar tu estado de cuenta.
           </div>
         </>
       ) : (
@@ -236,6 +247,9 @@ export default function DebtTable({ data, addDebtWithPlan, deleteRow, saveRowEdi
           const utilTarjeta = esTarjeta && d.limiteCredito > 0
             ? Math.min(100, (d.saldoPendiente / d.limiteCredito) * 100)
             : 0;
+
+          // Día de pago derivado de fechaInicio (mismo formato que gastos fijos: "día N")
+          const diaPago = getDayFromISO(d.fechaInicio);
 
           let cuotaThisMonth = null;
           if (hasPlan && d.fechaInicio) {
@@ -336,6 +350,16 @@ export default function DebtTable({ data, addDebtWithPlan, deleteRow, saveRowEdi
                 <div className="item__amount-sub">
                   {esTarjeta ? `Pago ${fmt(d.proxCuota)}` : `Cuota ${fmt(d.proxCuota)}`}
                 </div>
+                {/* Día de pago (mismo patrón que en Gastos fijos) */}
+                {!terminada && diaPago && (
+                  <div
+                    className="item__amount-sub"
+                    style={{ color: "var(--text-tertiary)", marginTop: 2 }}
+                    title="Día de pago mensual"
+                  >
+                    📅 día {diaPago}
+                  </div>
+                )}
                 <div style={{ display: "flex", gap: 2, marginTop: 4, justifyContent: "flex-end" }}>
                   <ActionButtons
                     section="debts" id={d.id} item={d}
