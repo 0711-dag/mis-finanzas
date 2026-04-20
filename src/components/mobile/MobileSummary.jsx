@@ -1,11 +1,13 @@
 // ══════════════════════════════════════════════
 // 📱 Pantalla de resumen móvil (home)
-// Bloque superior: Balance + MetricsCards (Balance/Ratio/Deuda total)
-// Fila inferior: Ingresos · Egresos Totales · Pendiente
+// Estructura:
+//  - Hero balance
+//  - 3 cards grandes: Balance, Ratio endeudamiento, Deuda total (MetricsCards)
+//  - 3 cards pequeñas en una fila: Ingresos, Egresos totales, Pendiente
+//  - Movimientos recientes
 // ══════════════════════════════════════════════
 import { fmt, fmtDate } from "../../utils/format.js";
 import MetricsCards from "../MetricsCards.jsx";
-import InfoHint from "../shared/InfoHint.jsx";
 
 export default function MobileSummary({
   totalIncomes,
@@ -13,7 +15,6 @@ export default function MobileSummary({
   totalVarExpenses,
   totalPending,
   totalDebtPending,
-  egresosTotales,
   reportBalance,
   filteredPayments,
   filteredVarExpenses,
@@ -23,13 +24,10 @@ export default function MobileSummary({
   onShowReport,
   save,
 }) {
-  // Fallback defensivo: si no llega egresosTotales (p. ej. renderizado antes del refactor
-  // completo del padre) lo reconstruimos a partir de los totales clásicos.
-  const egresos = typeof egresosTotales === "number"
-    ? egresosTotales
-    : (totalPayments + totalVarExpenses);
+  // Egresos totales = todo lo que sale (pagos programados + gastos variables)
+  const totalEgresos = (totalPayments || 0) + (totalVarExpenses || 0);
 
-  // Combinar últimos movimientos (pagos + gastos variables) ordenados por fecha desc
+  // Combinar últimos movimientos (pagos + gastos variables + ingresos) por fecha desc
   const recent = [
     ...filteredPayments.map((p) => ({
       id: p.id,
@@ -94,40 +92,6 @@ export default function MobileSummary({
     save(nd);
   };
 
-  // Tarjetas de la fila inferior (con ⓘ explicativo en cada una)
-  const bottomCards = [
-    {
-      label: "Ingresos",
-      value: totalIncomes,
-      cls: "stat-card__value--success",
-      info: {
-        title: "Ingresos",
-        description: "Suma de todo el dinero que entra este ciclo.",
-        formula: "Σ ingresos del ciclo",
-      },
-    },
-    {
-      label: "Egresos Totales",
-      value: egresos,
-      cls: "stat-card__value--danger",
-      info: {
-        title: "Egresos Totales",
-        description: "Todo lo que sale este ciclo: CF + CV + gasto discrecional.",
-        formula: "CF + CV + Discrecional",
-      },
-    },
-    {
-      label: "Pendiente",
-      value: totalPending,
-      cls: "stat-card__value--warning",
-      info: {
-        title: "Pendiente del ciclo",
-        description: "Pagos programados que aún no has marcado como pagados.",
-        formula: "Σ pagos con estado = PENDIENTE",
-      },
-    },
-  ];
-
   return (
     <>
       {/* Hero balance */}
@@ -141,30 +105,31 @@ export default function MobileSummary({
         </div>
       </div>
 
-      {/* 🆕 MÉTRICAS FINANCIERAS (bloque superior: Balance, Ratio, Deuda total) */}
+      {/* Métricas grandes: Balance, Ratio endeudamiento, Deuda total */}
       <MetricsCards data={data} selectedMonth={selectedMonth} compact />
 
-      {/* Fila inferior: Ingresos · Egresos Totales · Pendiente */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: 6,
-          marginBottom: 12,
-        }}
-      >
-        {bottomCards.map((c, i) => (
-          <div key={i} className="stat-card" style={{ position: "relative", overflow: "visible", padding: "10px 10px" }}>
-            <div style={{ position: "absolute", top: 4, right: 6 }}>
-              <InfoHint {...c.info} align="right" />
-            </div>
-            <div className="stat-card__label" style={{ paddingRight: 22, fontSize: 10 }}>{c.label}</div>
-            <div className={`stat-card__value ${c.cls}`} style={{ fontSize: 15 }}>{fmt(c.value)}</div>
-          </div>
-        ))}
+      {/* 3 cards pequeñas: Ingresos, Egresos totales, Pendiente */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(3, 1fr)",
+        gap: 6,
+        marginBottom: 18,
+      }}>
+        <div className="stat-card">
+          <div className="stat-card__label">Ingresos</div>
+          <div className="stat-card__value stat-card__value--success">{fmt(totalIncomes)}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card__label">Egresos totales</div>
+          <div className="stat-card__value stat-card__value--danger">{fmt(totalEgresos)}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card__label">Pendiente</div>
+          <div className="stat-card__value stat-card__value--warning">{fmt(totalPending)}</div>
+        </div>
       </div>
 
-      {/* Últimos movimientos */}
+      {/* Movimientos recientes */}
       <div className="section-header">
         <div className="section-header__title">Movimientos recientes</div>
         <button className="section-header__action" onClick={onShowReport}>Ver informe →</button>
