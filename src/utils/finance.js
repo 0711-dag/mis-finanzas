@@ -355,6 +355,145 @@ function calcExpenseBreakdown(data, cycleMK) {
 }
 
 // ══════════════════════════════════════════════
+// 🆕 DESGLOSE DETALLADO CF / CV / Discrecional
+//    + separación "Ejecutado" vs "Total programado"
+//    + progreso del calendario por origen
+// ══════════════════════════════════════════════
+
+/**
+ * Igual que calcExpenseBreakdown, pero devuelve para cada tipo (CF/CV/Disc)
+ * dos cifras: "total" (todo lo del ciclo) y "ejecutado" (lo ya pagado o ya gastado).
+ *
+ * Regla de "ejecutado":
+ *  - Pagos del calendario → cuentan si estado === "PAGADO"
+ *  - Gastos variables → SIEMPRE cuentan como ejecutados (ya salieron del bolsillo)
+ *
+ * Además devuelve el progreso del calendario por origen (fijos / cuotas / manuales):
+ *  - pagado: suma de los pagos con ese origen que están en estado PAGADO
+ *  - total: suma de todos los pagos con ese origen (pagados + pendientes)
+ *
+ * Devuelve:
+ *  - cf, cv, discrecional: { total, ejecutado }
+ *  - egresosTotales:       { total, ejecutado }
+ *  - calendario:           { fijos: {pagado, total}, cuotas: {...}, manuales: {...}, total: {...} }
+ */
+function calcExpenseBreakdownDetailed(data, cycleMK) {
+  const empty = {
+    cf: { total: 0, ejecutado: 0 },
+    cv: { total: 0, ejecutado: 0 },
+    discrecional: { total: 0, ejecutado: 0 },
+    egresosTotales: { total: 0, ejecutado: 0 },
+    calendario: {
+      fijos: { pagado: 0, total: 0 },
+      cuotas: { pagado: 0, total: 0 },
+      manuales: { pagado: 0, total: 0 },
+      total: { pagado: 0, total: 0 },
+    },
+  };
+  if (!data || !cycleMK) return empty;
+
+  let cfTotal = 0, cfExec = 0;
+  let cvTotal = 0, cvExec = 0;
+  let dscTotal = 0, dscExec = 0;
+
+  // Progreso del calendario por origen
+  let fijosPagado = 0, fijosTotal = 0;
+  let cuotasPagado = 0, cuotasTotal = 0;
+  let manualesPagado = 0, manualesTotal = 0;
+
+  // Mapa de gastos fijos por id para poder recuperar su categoría
+  const fixedExpensesById = {};
+  (data.fixedExpenses || []).forEach((f) => {
+    fixedExpensesById[f.id] = f;
+  });
+
+  const payments = (data.payments || []).filter((p) => p.month === cycleMK);
+
+  for (const p of payments) {
+    const monto = Number(p.monto) || 0;
+    const estaPagado = p.estado === "PAGADO";
+
+    // --- Progreso del calendario por origen ---
+    if (p.debtId) {
+      cuotasTotal += monto;
+      if (estaPagado) cuotasPagado += monto;
+    } else if (p.fixedExpenseId) {
+      fijosTotal += monto;
+      if (estaPagado) fijosPagado += monto;
+    } else {
+      manualesTotal += monto;
+      if (estaPagado) manualesPagado += monto;
+    }
+
+    // --- Clasificación CF/CV/Disc ---
+    if (p.debtId) {
+      // Cuota de deuda → CF
+      cfTotal += monto;
+      if (estaPagado) cfExec += monto;
+      continue;
+    }
+
+    if (p.fixedExpenseId) {
+      const fixed = fixedExpensesById[p.fixedExpenseId];
+      const tipo = inferTipoGasto(fixed || p, "fixed");
+      if (tipo === TIPO_GASTO.CF) {
+        cfTotal += monto;
+        if (estaPagado) cfExec += monto;
+      } else if (tipo === TIPO_GASTO.DISCRECIONAL) {
+        dscTotal += monto;
+        if (estaPagado) dscExec += monto;
+      } else {
+        cvTotal += monto;
+        if (estaPagado) cvExec += monto;
+      }
+      continue;
+    }
+
+    // Pago manual → CV por defecto
+    cvTotal += monto;
+    if (estaPagado) cvExec += monto;
+  }
+
+  // Gastos variables: SIEMPRE cuentan como ejecutados (ya salieron)
+  const variableExpenses = (data.variableExpenses || []).filter(
+    (v) => v.month === cycleMK
+  );
+
+  for (const v of variableExpenses) {
+    const monto = Number(v.monto) || 0;
+    const tipo = inferTipoGasto(v, "variable");
+    if (tipo === TIPO_GASTO.DISCRECIONAL) {
+      dscTotal += monto;
+      dscExec += monto;
+    } else if (tipo === TIPO_GASTO.CF) {
+      cfTotal += monto;
+      cfExec += monto;
+    } else {
+      cvTotal += monto;
+      cvExec += monto;
+    }
+  }
+
+  const totTotal = cfTotal + cvTotal + dscTotal;
+  const totExec = cfExec + cvExec + dscExec;
+  const calTotalPagado = fijosPagado + cuotasPagado + manualesPagado;
+  const calTotalTotal = fijosTotal + cuotasTotal + manualesTotal;
+
+  return {
+    cf: { total: r2(cfTotal), ejecutado: r2(cfExec) },
+    cv: { total: r2(cvTotal), ejecutado: r2(cvExec) },
+    discrecional: { total: r2(dscTotal), ejecutado: r2(dscExec) },
+    egresosTotales: { total: r2(totTotal), ejecutado: r2(totExec) },
+    calendario: {
+      fijos: { pagado: r2(fijosPagado), total: r2(fijosTotal) },
+      cuotas: { pagado: r2(cuotasPagado), total: r2(cuotasTotal) },
+      manuales: { pagado: r2(manualesPagado), total: r2(manualesTotal) },
+      total: { pagado: r2(calTotalPagado), total: r2(calTotalTotal) },
+    },
+  };
+}
+
+// ══════════════════════════════════════════════
 // PRESUPUESTO
 // ══════════════════════════════════════════════
 
@@ -489,4 +628,7 @@ export {
   TIPO_GASTO,
   inferTipoGasto,
   calcExpenseBreakdown,
+  // 🆕 Desglose detallado con separación "Ejecutado" vs "Total"
+  //     y progreso del calendario por origen
+  calcExpenseBreakdownDetailed,
 };
