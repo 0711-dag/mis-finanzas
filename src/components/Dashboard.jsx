@@ -2,9 +2,14 @@
 // 💰 Dashboard Principal
 // - Móvil: tabs inferiores + FAB central
 // - Escritorio: sidebar + grid denso
-// + Métricas financieras (tasa ahorro, ratio deuda, deuda total)
+// + Métricas financieras en 3 filas × 3 cards (MetricsCards)
 // + Panel de Metas de Ahorro
 // + Categorías personalizadas propagadas a FixedExpenses y VariableExpenses
+//
+// Nota: el "Balance del ciclo" vive únicamente en MetricsCards (card superior izquierda).
+// Se eliminaron el hero grande duplicado y las 3 stat-cards pequeñas
+// (Ingresos / Egresos totales / Pendiente), ahora integradas en MetricsCards.
+// Egresos y clasificación CF/CV/Discrecional vienen de calcExpenseBreakdown.
 // ══════════════════════════════════════════════
 import { useState, useEffect } from "react";
 import { auth, signOut } from "../firebase.js";
@@ -91,7 +96,9 @@ export default function Dashboard({ user, theme, toggleTheme }) {
     );
   }
 
+  // ══════════════════════════════════════════════
   // Filtrado por ciclo financiero
+  // ══════════════════════════════════════════════
   const { start: cycleStart, end: cycleEnd } = getCycleDates(selectedMonth);
 
   const filteredPayments = (data.payments || [])
@@ -117,16 +124,19 @@ export default function Dashboard({ user, theme, toggleTheme }) {
     return v.month === selectedMonth;
   });
 
-  // Totales
-  const totalPayments = filteredPayments.reduce((s, p) => s + (p.monto || 0), 0);
-  const totalPending = filteredPayments.filter((p) => p.estado === "PENDIENTE").reduce((s, p) => s + (p.monto || 0), 0);
-  const totalIncomes = filteredIncomes.reduce((s, i) => s + (i.amount || 0), 0);
-  const totalVarExpenses = filteredVarExpenses.reduce((s, v) => s + (v.monto || 0), 0);
-  const totalDebtPending = (data.debts || []).reduce((s, d) => s + (d.saldoPendiente || 0), 0);
-  const reportBalance = totalIncomes - totalPayments - totalVarExpenses;
-
-  // Egresos totales = pagos programados + gastos variables (igual que en móvil)
-  const totalEgresos = totalPayments + totalVarExpenses;
+  // ══════════════════════════════════════════════
+  // Totales ligeros (solo lo que realmente se usa a este nivel)
+  //
+  // Ya no calculamos `totalPayments + totalVarExpenses` como proxy de
+  // egresos: el cálculo canónico vive en calcExpenseBreakdown y lo
+  // consume MetricsCards directamente.
+  //
+  // `totalPending` se mantiene aquí porque depende del estado PAGADO/PENDIENTE
+  // que no se computa dentro de finance.js.
+  // ══════════════════════════════════════════════
+  const totalPending = filteredPayments
+    .filter((p) => p.estado === "PENDIENTE")
+    .reduce((s, p) => s + (p.monto || 0), 0);
 
   // Meses disponibles
   const getAllFinancialMonths = () => {
@@ -233,12 +243,7 @@ export default function Dashboard({ user, theme, toggleTheme }) {
           {/* Contenido según tab activo */}
           {mobileTab === "home" && (
             <MobileSummary
-              totalIncomes={totalIncomes}
-              totalPayments={totalPayments}
-              totalVarExpenses={totalVarExpenses}
               totalPending={totalPending}
-              totalDebtPending={totalDebtPending}
-              reportBalance={reportBalance}
               filteredPayments={filteredPayments}
               filteredVarExpenses={filteredVarExpenses}
               filteredIncomes={filteredIncomes}
@@ -428,44 +433,12 @@ export default function Dashboard({ user, theme, toggleTheme }) {
             />
           </div>
 
-          {/* Hero balance */}
-          <div className="hero-balance" style={{ marginBottom: 18 }}>
-            <div className="hero-balance__label">Balance del ciclo</div>
-            <div className="hero-balance__value" style={{ color: reportBalance >= 0 ? "var(--text-primary)" : "var(--danger)" }}>
-              {fmt(reportBalance)}
-            </div>
-            <div className={`hero-balance__badge ${reportBalance < 0 ? "hero-balance__badge--neg" : ""}`}>
-              {reportBalance >= 0 ? "Todo bajo control" : "Gastas más de lo que ingresas"}
-            </div>
-          </div>
-
-          {/* Métricas financieras:
-              - Fila 1: Costos Fijos · Costos Variables · Discrecional (con ejecutado vs total)
-              - Fila 2: Progreso del calendario (Fijos / Cuotas / Manuales, pagado vs programado)
-              - Fila 3: Deuda total · Ratio endeudamiento */}
-          <MetricsCards data={data} selectedMonth={selectedMonth} />
-
-          {/* Stat-cards simples: 3 columnas (Ingresos / Egresos totales / Pendiente)
-              Se mantienen como vista rápida: el detalle vive en MetricsCards arriba. */}
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
-            gap: 10,
-            marginBottom: 18,
-          }}>
-            <div className="stat-card">
-              <div className="stat-card__label">Ingresos</div>
-              <div className="stat-card__value stat-card__value--success">{fmt(totalIncomes)}</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-card__label">Egresos totales</div>
-              <div className="stat-card__value stat-card__value--danger">{fmt(totalEgresos)}</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-card__label">Pendiente</div>
-              <div className="stat-card__value stat-card__value--warning">{fmt(totalPending)}</div>
-            </div>
-          </div>
+          {/* Métricas financieras: 3 filas × 3 cards (fuente única: calcExpenseBreakdown) */}
+          <MetricsCards
+            data={data}
+            selectedMonth={selectedMonth}
+            totalPending={totalPending}
+          />
 
           {/* Grid principal */}
           <div className="desktop-grid">
