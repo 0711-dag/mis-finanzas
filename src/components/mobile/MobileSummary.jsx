@@ -5,14 +5,21 @@
 //  - 3 cards grandes: Balance, Ratio endeudamiento, Deuda total (MetricsCards)
 //  - 3 cards pequeñas en una fila: Ingresos, Egresos totales, Pendiente
 //  - Movimientos recientes
+//
+// 🆕 totalEgresos llega como prop desde Dashboard (calculado con el motor
+//    contable único calcExpenseBreakdown) para que cuadre con el hero
+//    y con las cards grandes. Ya no se calcula localmente.
+// 🆕 Las 3 cards pequeñas tienen icono ⓘ con su explicación.
 // ══════════════════════════════════════════════
 import { fmt, fmtDate } from "../../utils/format.js";
 import MetricsCards from "../MetricsCards.jsx";
+import InfoHint from "../shared/InfoHint.jsx";
 
 export default function MobileSummary({
   totalIncomes,
   totalPayments,
   totalVarExpenses,
+  totalEgresos,
   totalPending,
   totalDebtPending,
   reportBalance,
@@ -24,8 +31,12 @@ export default function MobileSummary({
   onShowReport,
   save,
 }) {
-  // Egresos totales = todo lo que sale (pagos programados + gastos variables)
-  const totalEgresos = (totalPayments || 0) + (totalVarExpenses || 0);
+  // Fallback por seguridad: si Dashboard no pasó totalEgresos, lo calculamos
+  // de la forma antigua (pagos + variables). No debería ocurrir con esta
+  // entrega, pero evita un NaN si algún render intermedio llega sin la prop.
+  const egresos = typeof totalEgresos === "number"
+    ? totalEgresos
+    : (totalPayments || 0) + (totalVarExpenses || 0);
 
   // Combinar últimos movimientos (pagos + gastos variables + ingresos) por fecha desc
   const recent = [
@@ -115,16 +126,45 @@ export default function MobileSummary({
         gap: 6,
         marginBottom: 18,
       }}>
-        <div className="stat-card">
-          <div className="stat-card__label">Ingresos</div>
+        {/* Ingresos */}
+        <div className="stat-card" style={{ position: "relative", overflow: "visible" }}>
+          <div style={{ position: "absolute", top: 4, right: 6 }}>
+            <InfoHint
+              title="Ingresos"
+              description="Total de dinero que entra al hogar durante este ciclo (del día 27 al 26)."
+              formula="Σ ingresos del ciclo"
+              align="right"
+            />
+          </div>
+          <div className="stat-card__label" style={{ paddingRight: 18 }}>Ingresos</div>
           <div className="stat-card__value stat-card__value--success">{fmt(totalIncomes)}</div>
         </div>
-        <div className="stat-card">
-          <div className="stat-card__label">Egresos totales</div>
-          <div className="stat-card__value stat-card__value--danger">{fmt(totalEgresos)}</div>
+
+        {/* Egresos totales */}
+        <div className="stat-card" style={{ position: "relative", overflow: "visible" }}>
+          <div style={{ position: "absolute", top: 4, right: 6 }}>
+            <InfoHint
+              title="Egresos totales"
+              description="Todo el dinero que sale del hogar en el ciclo: cuotas de deuda, gastos fijos, pagos manuales y gastos variables."
+              formula="Costos Fijos + Costos Variables + Discrecional"
+              align="right"
+            />
+          </div>
+          <div className="stat-card__label" style={{ paddingRight: 18 }}>Egresos totales</div>
+          <div className="stat-card__value stat-card__value--danger">{fmt(egresos)}</div>
         </div>
-        <div className="stat-card">
-          <div className="stat-card__label">Pendiente</div>
+
+        {/* Pendiente */}
+        <div className="stat-card" style={{ position: "relative", overflow: "visible" }}>
+          <div style={{ position: "absolute", top: 4, right: 6 }}>
+            <InfoHint
+              title="Pendiente"
+              description="Pagos del calendario de este ciclo que aún no has marcado como pagados."
+              formula="Σ pagos con estado = PENDIENTE"
+              align="left"
+            />
+          </div>
+          <div className="stat-card__label" style={{ paddingRight: 18 }}>Pendiente</div>
           <div className="stat-card__value stat-card__value--warning">{fmt(totalPending)}</div>
         </div>
       </div>
