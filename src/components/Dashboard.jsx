@@ -5,6 +5,10 @@
 // + Métricas financieras (tasa ahorro, ratio deuda, deuda total)
 // + Panel de Metas de Ahorro
 // + Categorías personalizadas propagadas a FixedExpenses y VariableExpenses
+//
+// 🆕 Balance del ciclo y Egresos totales usan el motor contable único
+//    (calcExpenseBreakdown) para que todas las tarjetas de la pantalla
+//    muestren el mismo número. Ingresos y Pendiente se mantienen igual.
 // ══════════════════════════════════════════════
 import { useState, useEffect } from "react";
 import { auth, signOut } from "../firebase.js";
@@ -13,12 +17,14 @@ import useAutoLogout from "../hooks/useAutoLogout.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 import { fmt, formatMonthLabel, MS } from "../utils/format.js";
 import { todayMK, getCycleDates, dateToFinancialMonth, formatMonthLabelWithCycle, CYCLE_START_DAY } from "../utils/cycle.js";
+import { calcExpenseBreakdown } from "../utils/finance.js";
 
 // Shared
 import ValidationToast from "./shared/ValidationToast.jsx";
 import SyncIndicator from "./shared/SyncIndicator.jsx";
 import UserMenu from "./shared/UserMenu.jsx";
 import MonthSelector from "./shared/MonthSelector.jsx";
+import InfoHint from "./shared/InfoHint.jsx";
 
 // Mobile
 import TabBar from "./mobile/TabBar.jsx";
@@ -123,10 +129,14 @@ export default function Dashboard({ user, theme, toggleTheme }) {
   const totalIncomes = filteredIncomes.reduce((s, i) => s + (i.amount || 0), 0);
   const totalVarExpenses = filteredVarExpenses.reduce((s, v) => s + (v.monto || 0), 0);
   const totalDebtPending = (data.debts || []).reduce((s, d) => s + (d.saldoPendiente || 0), 0);
-  const reportBalance = totalIncomes - totalPayments - totalVarExpenses;
 
-  // Egresos totales = pagos programados + gastos variables (igual que en móvil)
-  const totalEgresos = totalPayments + totalVarExpenses;
+  // 🆕 Motor contable único: CF / CV / Discrecional
+  // Egresos totales = CF + CV + Discrecional (incluye cuotas de deuda,
+  // gastos fijos, pagos manuales y gastos variables, clasificados).
+  // Mantenemos una fuente de verdad única para Balance y Egresos en toda la pantalla.
+  const breakdown = calcExpenseBreakdown(data, selectedMonth);
+  const totalEgresos = breakdown.egresosTotales;
+  const reportBalance = totalIncomes - totalEgresos;
 
   // Meses disponibles
   const getAllFinancialMonths = () => {
@@ -236,6 +246,7 @@ export default function Dashboard({ user, theme, toggleTheme }) {
               totalIncomes={totalIncomes}
               totalPayments={totalPayments}
               totalVarExpenses={totalVarExpenses}
+              totalEgresos={totalEgresos}
               totalPending={totalPending}
               totalDebtPending={totalDebtPending}
               reportBalance={reportBalance}
@@ -449,16 +460,45 @@ export default function Dashboard({ user, theme, toggleTheme }) {
             gap: 10,
             marginBottom: 18,
           }}>
-            <div className="stat-card">
-              <div className="stat-card__label">Ingresos</div>
+            {/* Ingresos */}
+            <div className="stat-card" style={{ position: "relative", overflow: "visible" }}>
+              <div style={{ position: "absolute", top: 6, right: 8 }}>
+                <InfoHint
+                  title="Ingresos"
+                  description="Total de dinero que entra al hogar durante este ciclo (del día 27 al 26)."
+                  formula="Σ ingresos del ciclo"
+                  align="right"
+                />
+              </div>
+              <div className="stat-card__label" style={{ paddingRight: 22 }}>Ingresos</div>
               <div className="stat-card__value stat-card__value--success">{fmt(totalIncomes)}</div>
             </div>
-            <div className="stat-card">
-              <div className="stat-card__label">Egresos totales</div>
+
+            {/* Egresos totales */}
+            <div className="stat-card" style={{ position: "relative", overflow: "visible" }}>
+              <div style={{ position: "absolute", top: 6, right: 8 }}>
+                <InfoHint
+                  title="Egresos totales"
+                  description="Todo el dinero que sale del hogar en el ciclo: cuotas de deuda, gastos fijos, pagos manuales y gastos variables."
+                  formula="Costos Fijos + Costos Variables + Discrecional"
+                  align="right"
+                />
+              </div>
+              <div className="stat-card__label" style={{ paddingRight: 22 }}>Egresos totales</div>
               <div className="stat-card__value stat-card__value--danger">{fmt(totalEgresos)}</div>
             </div>
-            <div className="stat-card">
-              <div className="stat-card__label">Pendiente</div>
+
+            {/* Pendiente */}
+            <div className="stat-card" style={{ position: "relative", overflow: "visible" }}>
+              <div style={{ position: "absolute", top: 6, right: 8 }}>
+                <InfoHint
+                  title="Pendiente"
+                  description="Pagos del calendario de este ciclo que aún no has marcado como pagados."
+                  formula="Σ pagos con estado = PENDIENTE"
+                  align="right"
+                />
+              </div>
+              <div className="stat-card__label" style={{ paddingRight: 22 }}>Pendiente</div>
               <div className="stat-card__value stat-card__value--warning">{fmt(totalPending)}</div>
             </div>
           </div>
