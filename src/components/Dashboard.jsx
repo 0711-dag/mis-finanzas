@@ -57,7 +57,7 @@ export default function Dashboard({ user, theme, toggleTheme }) {
     addOrUpdateBudget, removeBudget, copyBudgetsFromPrevCycle,
     // Metas de ahorro
     addGoal, updateGoal, deleteGoal, addDeposit, deleteDeposit,
-    // 🆕 Categorías personalizadas
+    // Categorías personalizadas
     addCategory, updateCategory, deleteCategory,
   } = useFinancialData(user);
 
@@ -125,6 +125,9 @@ export default function Dashboard({ user, theme, toggleTheme }) {
   const totalDebtPending = (data.debts || []).reduce((s, d) => s + (d.saldoPendiente || 0), 0);
   const reportBalance = totalIncomes - totalPayments - totalVarExpenses;
 
+  // Egresos totales = pagos programados + gastos variables (igual que en móvil)
+  const totalEgresos = totalPayments + totalVarExpenses;
+
   // Meses disponibles
   const getAllFinancialMonths = () => {
     const months = new Set([selectedMonth]);
@@ -153,7 +156,7 @@ export default function Dashboard({ user, theme, toggleTheme }) {
     toggleRecurrente,
     setAddingTo,
     addingTo,
-    // 🆕 Categorías custom
+    // Categorías custom
     addCategory,
     updateCategory,
     deleteCategory,
@@ -173,7 +176,7 @@ export default function Dashboard({ user, theme, toggleTheme }) {
     removeBudget,
     copyBudgetsFromPrevCycle,
     getPrevCycle,
-    // 🆕 Categorías custom
+    // Categorías custom
     addCategory,
     updateCategory,
     deleteCategory,
@@ -363,15 +366,6 @@ export default function Dashboard({ user, theme, toggleTheme }) {
   // ══════════════════════════════════════════════
   // RENDER ESCRITORIO
   // ══════════════════════════════════════════════
-  const summaryCards = [
-    { label: "Ingresos", val: totalIncomes, cls: "stat-card__value--success" },
-    { label: "Pagos totales", val: totalPayments, cls: "stat-card__value--danger" },
-    { label: "Gastos variables", val: totalVarExpenses, cls: "stat-card__value--expense" },
-    { label: "Pendiente ciclo", val: totalPending, cls: "stat-card__value--warning" },
-    { label: "Deuda pendiente", val: totalDebtPending, cls: "stat-card__value--debt" },
-    { label: "Balance", val: reportBalance, cls: reportBalance >= 0 ? "stat-card__value--success" : "stat-card__value--danger" },
-  ];
-
   return (
     <div className="app-shell">
       <ValidationToast message={validationError} />
@@ -445,17 +439,28 @@ export default function Dashboard({ user, theme, toggleTheme }) {
             </div>
           </div>
 
-          {/* Métricas financieras */}
+          {/* Métricas financieras (3 cards grandes: Balance, Ratio, Deuda total) */}
           <MetricsCards data={data} selectedMonth={selectedMonth} />
 
-          {/* Summary cards (totales del ciclo) */}
-          <div className="summary-grid">
-            {summaryCards.map((c, i) => (
-              <div key={i} className="stat-card">
-                <div className="stat-card__label">{c.label}</div>
-                <div className={`stat-card__value ${c.cls}`}>{fmt(c.val)}</div>
-              </div>
-            ))}
+          {/* Stat-cards simples: 3 columnas (Ingresos / Egresos totales / Pendiente) */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(3, 1fr)",
+            gap: 10,
+            marginBottom: 18,
+          }}>
+            <div className="stat-card">
+              <div className="stat-card__label">Ingresos</div>
+              <div className="stat-card__value stat-card__value--success">{fmt(totalIncomes)}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card__label">Egresos totales</div>
+              <div className="stat-card__value stat-card__value--danger">{fmt(totalEgresos)}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card__label">Pendiente</div>
+              <div className="stat-card__value stat-card__value--warning">{fmt(totalPending)}</div>
+            </div>
           </div>
 
           {/* Grid principal */}
