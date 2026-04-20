@@ -1,24 +1,19 @@
 // ══════════════════════════════════════════════
 // 📱 Pantalla de resumen móvil (home)
+//
 // Estructura:
-//  - Hero balance
-//  - MetricsCards (nuevo layout):
-//      · Fila 1: CF · CV · Discrecional (con "ejecutado" + "total")
-//      · Fila 2: Progreso del calendario (Fijos / Cuotas / Manuales)
-//      · Fila 3: Deuda total · Ratio endeudamiento
-//  - 3 cards pequeñas: Ingresos, Egresos totales, Pendiente
+//  - MetricsCards (3×3): balance, egresos, pendiente / CF, CV, Discr. / ingresos, ratio, aportes
 //  - Movimientos recientes
+//
+// Se elimina el hero grande y las 3 stat-cards pequeñas:
+// toda la info del "resumen" vive ahora en MetricsCards, que es la fuente
+// única y coherente (usa calcExpenseBreakdown).
 // ══════════════════════════════════════════════
 import { fmt, fmtDate } from "../../utils/format.js";
 import MetricsCards from "../MetricsCards.jsx";
 
 export default function MobileSummary({
-  totalIncomes,
-  totalPayments,
-  totalVarExpenses,
   totalPending,
-  totalDebtPending,
-  reportBalance,
   filteredPayments,
   filteredVarExpenses,
   filteredIncomes,
@@ -27,9 +22,6 @@ export default function MobileSummary({
   onShowReport,
   save,
 }) {
-  // Egresos totales = todo lo que sale (pagos programados + gastos variables)
-  const totalEgresos = (totalPayments || 0) + (totalVarExpenses || 0);
-
   // Combinar últimos movimientos (pagos + gastos variables + ingresos) por fecha desc
   const recent = [
     ...filteredPayments.map((p) => ({
@@ -97,40 +89,13 @@ export default function MobileSummary({
 
   return (
     <>
-      {/* Hero balance */}
-      <div className="hero-balance">
-        <div className="hero-balance__label">Balance del ciclo</div>
-        <div className="hero-balance__value" style={{ color: reportBalance >= 0 ? "var(--text-primary)" : "var(--danger)" }}>
-          {fmt(reportBalance)}
-        </div>
-        <div className={`hero-balance__badge ${reportBalance < 0 ? "hero-balance__badge--neg" : ""}`}>
-          {reportBalance >= 0 ? "Todo bajo control" : "Gastas de más"}
-        </div>
-      </div>
-
-      {/* Métricas: CF/CV/Disc + Progreso calendario + Deuda/Ratio */}
-      <MetricsCards data={data} selectedMonth={selectedMonth} compact />
-
-      {/* 3 cards pequeñas: Ingresos, Egresos totales, Pendiente */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(3, 1fr)",
-        gap: 6,
-        marginBottom: 18,
-      }}>
-        <div className="stat-card">
-          <div className="stat-card__label">Ingresos</div>
-          <div className="stat-card__value stat-card__value--success">{fmt(totalIncomes)}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-card__label">Egresos totales</div>
-          <div className="stat-card__value stat-card__value--danger">{fmt(totalEgresos)}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-card__label">Pendiente</div>
-          <div className="stat-card__value stat-card__value--warning">{fmt(totalPending)}</div>
-        </div>
-      </div>
+      {/* Métricas en 3 filas × 3 columnas (fuente única de egresos: calcExpenseBreakdown) */}
+      <MetricsCards
+        data={data}
+        selectedMonth={selectedMonth}
+        totalPending={totalPending}
+        compact
+      />
 
       {/* Movimientos recientes */}
       <div className="section-header">
