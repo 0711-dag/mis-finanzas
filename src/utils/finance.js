@@ -2,19 +2,22 @@
 // 💼 Cálculos financieros reutilizables
 // Métricas del hogar: ahorro, endeudamiento, deudas,
 // presupuestos y metas.
+//
+// v2: las categorías son objetos en data.categories identificados por
+// `categoryId` estable. `inferTipoGasto` busca por ID y lee el campo
+// `tipoGasto` directamente.
 // ══════════════════════════════════════════════
-import { normalizeCategoryLabel } from "./categoryDefaults.js";
+import {
+  findCategoryById,
+  resolveLegacyStringToId,
+  buildCategoryLabel,
+  normalizeCategoryLabel,
+} from "./categoryDefaults.js";
 
-/**
- * Redondea a 2 decimales (evita "0.1 + 0.2 = 0.30000000000000004").
- */
 function r2(n) {
   return Math.round((Number(n) || 0) * 100) / 100;
 }
 
-/**
- * Suma segura de una propiedad numérica en un array.
- */
 function sumBy(arr, key) {
   return (arr || []).reduce((s, x) => s + (Number(x?.[key]) || 0), 0);
 }
@@ -23,9 +26,6 @@ function sumBy(arr, key) {
 // DEUDAS
 // ══════════════════════════════════════════════
 
-/**
- * Suma total de saldos pendientes de todas las deudas.
- */
 function calcDebtTotals(debts) {
   const total = sumBy(debts, "saldoPendiente");
   const porTipo = { tarjeta: 0, cuotas: 0, prestamo: 0 };
@@ -47,11 +47,6 @@ function calcDebtTotals(debts) {
   };
 }
 
-/**
- * Calcula el saldo real de una deuda restando pagos extra manuales.
- * El saldo "base" (debt.saldoPendiente) ya se actualiza con el plan automático,
- * esto añade los pagos extra fuera del plan.
- */
 function calcDebtRealBalance(debt, extraPayments) {
   const extras = (extraPayments || [])
     .filter((p) => p.debtId === debt.id)
@@ -59,9 +54,6 @@ function calcDebtRealBalance(debt, extraPayments) {
   return r2(Math.max(0, (Number(debt.saldoPendiente) || 0) - extras));
 }
 
-/**
- * Utilización de una tarjeta de crédito (0-100%).
- */
 function calcCardUtilization(debt) {
   if (debt.tipo !== "tarjeta") return 0;
   const limite = Number(debt.limiteCredito) || 0;
@@ -74,20 +66,6 @@ function calcCardUtilization(debt) {
 // MÉTRICAS DEL CICLO
 // ══════════════════════════════════════════════
 
-/**
- * Calcula las métricas financieras principales para un ciclo dado.
- *
- * Devuelve:
- *  - ingresos: total del ciclo
- *  - gastosFijos: pagos de tipo "fixedExpenseId" (recurrentes) del ciclo
- *  - gastosVariables: total de variableExpenses del ciclo
- *  - cuotasDeuda: pagos con debtId del ciclo
- *  - pagosManuales: pagos del ciclo sin origen (ni fijo ni deuda)
- *  - totalGastos: suma de todos los gastos
- *  - balance: ingresos − gastos
- *  - ahorroReal: balance + aportes registrados a metas en el ciclo
- *  - tasaAhorro: (ahorro / ingresos) × 100
- */
 function calcMonthlyMetrics(data, cycleMK) {
   if (!data || !cycleMK) {
     return {
@@ -132,7 +110,7 @@ function calcMonthlyMetrics(data, cycleMK) {
 
   const totalGastos = gastosFijos + gastosVariables + cuotasDeuda + pagosManuales;
   const balance = ingresos - totalGastos;
-  const ahorroReal = balance; // el dinero no gastado ES el ahorro potencial
+  const ahorroReal = balance;
   const tasaAhorro = ingresos > 0 ? (ahorroReal / ingresos) * 100 : 0;
 
   return {
@@ -149,26 +127,16 @@ function calcMonthlyMetrics(data, cycleMK) {
   };
 }
 
-/**
- * Tasa de ahorro (%).
- */
 function calcSavingsRate(ingresos, ahorro) {
   if (!ingresos || ingresos <= 0) return 0;
   return r2((ahorro / ingresos) * 100);
 }
 
-/**
- * Ratio de endeudamiento: cuotas de deuda / ingresos × 100.
- * Sano: < 30-35%.
- */
 function calcDebtRatio(cuotasDeuda, ingresos) {
   if (!ingresos || ingresos <= 0) return 0;
   return r2((cuotasDeuda / ingresos) * 100);
 }
 
-/**
- * Devuelve una evaluación textual del ratio de endeudamiento.
- */
 function evalDebtRatio(ratio) {
   if (ratio === 0) return { label: "Sin deudas", color: "success" };
   if (ratio < 20) return { label: "Saludable", color: "success" };
@@ -178,146 +146,94 @@ function evalDebtRatio(ratio) {
 }
 
 // ══════════════════════════════════════════════
-// 🆕 CLASIFICACIÓN CF / CV / DISCRECIONAL
+// 🆕 CLASIFICACIÓN CF / CV / DISCRECIONAL (v2)
 // ══════════════════════════════════════════════
 
-/**
- * Constantes de tipos de gasto según el modelo contable CF / CV / Discrecional.
- *  - CF: Costo Fijo. No cambia aunque no uses nada.
- *  - CV: Costo Variable. Necesario pero varía con el uso.
- *  - Discrecional: opcional, no esencial, reducible.
- */
 const TIPO_GASTO = {
   CF: "CF",
   CV: "CV",
   DISCRECIONAL: "Discrecional",
 };
 
-// 🆕 MAPA UNIFICADO de categoría → tipo de gasto.
-// Antes había dos mapas separados (FIXED_/VARIABLE_), ahora es uno solo
-// porque la lista de categorías también es única.
-// Se evalúa comparando el nombre de la categoría (sin emoji delante).
-const CATEGORY_TO_TIPO = {
-  "Vivienda": TIPO_GASTO.CF,
-  "Seguros": TIPO_GASTO.CF,
-  "Educación": TIPO_GASTO.CF,
-  "Servicios": TIPO_GASTO.CV,
-  "Supermercado": TIPO_GASTO.CV,
-  "Transporte": TIPO_GASTO.CV,
-  "Salud": TIPO_GASTO.CV,
-  "Restaurantes": TIPO_GASTO.DISCRECIONAL,
-  "Ropa": TIPO_GASTO.DISCRECIONAL,
-  "Ocio": TIPO_GASTO.DISCRECIONAL,
-  "Suscripciones": TIPO_GASTO.DISCRECIONAL,
-  // "Otros" deliberadamente sin mapear: usa el fallback por origen.
-};
-
 /**
- * Busca el tipoGasto declarado por una categoría custom.
- * Devuelve null si no hay match o si la custom no tiene tipoGasto definido.
+ * Resuelve el categoryId efectivo de un gasto.
+ * Prioridad:
+ *  1. gasto.categoryId si existe.
+ *  2. gasto.categoria (string legacy) resuelto a ID de default.
+ *  3. matching contra el label de alguna custom en `categories`.
+ *  4. "" si no se puede resolver.
  */
-function lookupCustomTipo(categoria, customCategories) {
-  if (!categoria || !customCategories || customCategories.length === 0) return null;
-  // La categoría en el gasto puede estar "normalizada" (migrada) o no;
-  // probamos ambas.
-  const label = categoria;
-  const labelNorm = normalizeCategoryLabel(categoria);
-  for (const c of customCategories) {
-    const emoji = c.emoji || "📦";
-    const cLabel = `${emoji} ${c.nombre}`;
-    if (cLabel === label || cLabel === labelNorm) {
-      return c.tipoGasto || null;
-    }
+function resolveCategoryId(gasto, categories) {
+  if (!gasto) return "";
+  if (gasto.categoryId) return gasto.categoryId;
+  const label = normalizeCategoryLabel(gasto.categoria || "");
+  if (!label) return "";
+  const defId = resolveLegacyStringToId(label);
+  if (defId) return defId;
+  const list = categories || [];
+  for (const c of list) {
+    if (c.kind === "custom" && buildCategoryLabel(c) === label) return c.id;
   }
-  return null;
-}
-
-/**
- * Extrae la palabra significativa de una categoría tipo "🛒 Supermercado".
- * Quita el emoji inicial y espacios sobrantes.
- */
-function extractCategoryName(categoria) {
-  if (!categoria || typeof categoria !== "string") return "";
-  // Elimina el primer token si no contiene letras (emoji) y devuelve el resto
-  const parts = categoria.trim().split(/\s+/);
-  if (parts.length > 1 && !/[a-záéíóúñA-ZÁÉÍÓÚÑ]/.test(parts[0])) {
-    return parts.slice(1).join(" ");
-  }
-  return parts.join(" ");
+  return "";
 }
 
 /**
  * Infiere el tipo de gasto (CF / CV / Discrecional) para un gasto concreto.
- * Orden de prioridad:
- *  1. Si el gasto ya tiene `tipoGasto` definido → se respeta.
- *  2. Si la categoría es custom y tiene `tipoGasto` → se usa ese.
- *  3. Deudas → siempre CF.
- *  4. Mapa unificado por nombre de categoría (default).
- *  5. Fallback conservador según origen (fixed→CF, variable→CV, manual→CV).
+ * v2: busca la categoría por ID en `categories` y lee su tipoGasto.
  *
- * @param {object} gasto - objeto con { categoria, tipoGasto?, ... }
+ * Orden de prioridad:
+ *  1. gasto.tipoGasto si viene definido explícitamente.
+ *  2. Deudas → siempre CF.
+ *  3. Categoría resuelta por ID → tipoGasto de la tabla.
+ *  4. Fallback por origen (fixed→CF, variable→CV, manual→CV).
+ *
+ * @param {object} gasto
  * @param {"fixed"|"variable"|"debt"|"manual"} origen
- * @param {Array} [customCategories] - lista de data.customCategories, opcional
- * @returns {"CF"|"CV"|"Discrecional"}
+ * @param {object} ctx - { categories } — requerido para lookups
  */
-function inferTipoGasto(gasto, origen, customCategories) {
-  // 1. Si el gasto concreto ya está clasificado manualmente, respeta.
+function inferTipoGasto(gasto, origen, ctx) {
+  // 1. Override explícito a nivel de gasto
   if (gasto?.tipoGasto && Object.values(TIPO_GASTO).includes(gasto.tipoGasto)) {
     return gasto.tipoGasto;
   }
 
-  // 2. Deudas: siempre CF (independiente de categoría)
+  // 2. Deudas
   if (origen === "debt") return TIPO_GASTO.CF;
 
-  // 3. Si es una categoría custom con tipoGasto declarado, úsalo.
-  const fromCustom = lookupCustomTipo(gasto?.categoria, customCategories);
-  if (fromCustom && Object.values(TIPO_GASTO).includes(fromCustom)) {
-    return fromCustom;
+  // Aceptamos ctx como objeto { categories } o directamente el array
+  // (compatibilidad con llamadas antiguas que pasaban customCategories).
+  let categories = [];
+  if (Array.isArray(ctx)) categories = ctx;
+  else if (ctx && Array.isArray(ctx.categories)) categories = ctx.categories;
+
+  // 3. Lookup por ID de categoría
+  const catId = resolveCategoryId(gasto, categories);
+  if (catId) {
+    const cat = findCategoryById(categories, catId);
+    if (cat && cat.tipoGasto && Object.values(TIPO_GASTO).includes(cat.tipoGasto)) {
+      return cat.tipoGasto;
+    }
   }
 
-  // 4. Mapa unificado por nombre (default).
-  const catName = extractCategoryName(gasto?.categoria);
-  const fromMap = CATEGORY_TO_TIPO[catName];
-  if (fromMap) return fromMap;
-
-  // 5. Fallback por origen — comportamiento conservador histórico.
+  // 4. Fallback por origen
   if (origen === "fixed") return TIPO_GASTO.CF;
   if (origen === "variable") return TIPO_GASTO.CV;
-  return TIPO_GASTO.CV; // pagos manuales
+  return TIPO_GASTO.CV;
 }
 
 /**
  * Desglose del ciclo en CF / CV / Discrecional + totales derivados.
- *
- * Clasifica cada movimiento del ciclo según el modelo contable:
- *  - CF (Costo Fijo): gastos fijos clasificados como CF + cuotas de deuda
- *  - CV (Costo Variable): gastos variables clasificados como CV + fijos CV (ej. luz)
- *  - Discrecional: gastos etiquetados como Discrecional (fijos o variables)
- *
- * Devuelve:
- *  - cf, cv, discrecional: sumas por tipo
- *  - ct (costo total): CF + CV — punto de equilibrio del hogar
- *  - egresosTotales: CF + CV + Discrecional — todo lo que sale
- *  - pagosManuales: importe de pagos sin origen (clasificados como CV)
  */
 function calcExpenseBreakdown(data, cycleMK) {
   const empty = {
-    cf: 0,
-    cv: 0,
-    discrecional: 0,
-    ct: 0,
-    egresosTotales: 0,
-    pagosManuales: 0,
+    cf: 0, cv: 0, discrecional: 0,
+    ct: 0, egresosTotales: 0, pagosManuales: 0,
   };
   if (!data || !cycleMK) return empty;
 
-  let cf = 0;
-  let cv = 0;
-  let discrecional = 0;
+  let cf = 0, cv = 0, discrecional = 0;
+  const ctx = { categories: data.categories || [] };
 
-  const customCategories = data.customCategories || [];
-
-  // Mapa de gastos fijos por id para recuperar su categoría
   const fixedExpensesById = {};
   (data.fixedExpenses || []).forEach((f) => {
     fixedExpensesById[f.id] = f;
@@ -329,33 +245,29 @@ function calcExpenseBreakdown(data, cycleMK) {
     const monto = Number(p.monto) || 0;
 
     if (p.debtId) {
-      // Cuota de deuda → CF
       cf += monto;
       continue;
     }
 
     if (p.fixedExpenseId) {
-      // Pago de gasto fijo → buscar categoría y clasificar
       const fixed = fixedExpensesById[p.fixedExpenseId];
-      const tipo = inferTipoGasto(fixed || p, "fixed", customCategories);
+      const tipo = inferTipoGasto(fixed || p, "fixed", ctx);
       if (tipo === TIPO_GASTO.CF) cf += monto;
       else if (tipo === TIPO_GASTO.DISCRECIONAL) discrecional += monto;
       else cv += monto;
       continue;
     }
 
-    // Pago manual (sin origen) → CV por defecto
     cv += monto;
   }
 
-  // Gastos variables del ciclo
   const variableExpenses = (data.variableExpenses || []).filter(
     (v) => v.month === cycleMK
   );
 
   for (const v of variableExpenses) {
     const monto = Number(v.monto) || 0;
-    const tipo = inferTipoGasto(v, "variable", customCategories);
+    const tipo = inferTipoGasto(v, "variable", ctx);
     if (tipo === TIPO_GASTO.DISCRECIONAL) discrecional += monto;
     else if (tipo === TIPO_GASTO.CF) cf += monto;
     else cv += monto;
@@ -378,28 +290,8 @@ function calcExpenseBreakdown(data, cycleMK) {
   };
 }
 
-// ══════════════════════════════════════════════
-// 🆕 DESGLOSE DETALLADO CF / CV / Discrecional
-//    + separación "Ejecutado" vs "Total programado"
-//    + progreso del calendario por origen
-// ══════════════════════════════════════════════
-
 /**
- * Igual que calcExpenseBreakdown, pero devuelve para cada tipo (CF/CV/Disc)
- * dos cifras: "total" (todo lo del ciclo) y "ejecutado" (lo ya pagado o ya gastado).
- *
- * Regla de "ejecutado":
- *  - Pagos del calendario → cuentan si estado === "PAGADO"
- *  - Gastos variables → SIEMPRE cuentan como ejecutados (ya salieron del bolsillo)
- *
- * Además devuelve el progreso del calendario por origen (fijos / cuotas / manuales):
- *  - pagado: suma de los pagos con ese origen que están en estado PAGADO
- *  - total: suma de todos los pagos con ese origen (pagados + pendientes)
- *
- * Devuelve:
- *  - cf, cv, discrecional: { total, ejecutado }
- *  - egresosTotales:       { total, ejecutado }
- *  - calendario:           { fijos: {pagado, total}, cuotas: {...}, manuales: {...}, total: {...} }
+ * Desglose detallado con separación ejecutado / total + calendario por origen.
  */
 function calcExpenseBreakdownDetailed(data, cycleMK) {
   const empty = {
@@ -420,14 +312,12 @@ function calcExpenseBreakdownDetailed(data, cycleMK) {
   let cvTotal = 0, cvExec = 0;
   let dscTotal = 0, dscExec = 0;
 
-  // Progreso del calendario por origen
   let fijosPagado = 0, fijosTotal = 0;
   let cuotasPagado = 0, cuotasTotal = 0;
   let manualesPagado = 0, manualesTotal = 0;
 
-  const customCategories = data.customCategories || [];
+  const ctx = { categories: data.categories || [] };
 
-  // Mapa de gastos fijos por id para poder recuperar su categoría
   const fixedExpensesById = {};
   (data.fixedExpenses || []).forEach((f) => {
     fixedExpensesById[f.id] = f;
@@ -439,7 +329,6 @@ function calcExpenseBreakdownDetailed(data, cycleMK) {
     const monto = Number(p.monto) || 0;
     const estaPagado = p.estado === "PAGADO";
 
-    // --- Progreso del calendario por origen ---
     if (p.debtId) {
       cuotasTotal += monto;
       if (estaPagado) cuotasPagado += monto;
@@ -451,9 +340,7 @@ function calcExpenseBreakdownDetailed(data, cycleMK) {
       if (estaPagado) manualesPagado += monto;
     }
 
-    // --- Clasificación CF/CV/Disc ---
     if (p.debtId) {
-      // Cuota de deuda → CF
       cfTotal += monto;
       if (estaPagado) cfExec += monto;
       continue;
@@ -461,7 +348,7 @@ function calcExpenseBreakdownDetailed(data, cycleMK) {
 
     if (p.fixedExpenseId) {
       const fixed = fixedExpensesById[p.fixedExpenseId];
-      const tipo = inferTipoGasto(fixed || p, "fixed", customCategories);
+      const tipo = inferTipoGasto(fixed || p, "fixed", ctx);
       if (tipo === TIPO_GASTO.CF) {
         cfTotal += monto;
         if (estaPagado) cfExec += monto;
@@ -475,19 +362,17 @@ function calcExpenseBreakdownDetailed(data, cycleMK) {
       continue;
     }
 
-    // Pago manual → CV por defecto
     cvTotal += monto;
     if (estaPagado) cvExec += monto;
   }
 
-  // Gastos variables: SIEMPRE cuentan como ejecutados (ya salieron)
   const variableExpenses = (data.variableExpenses || []).filter(
     (v) => v.month === cycleMK
   );
 
   for (const v of variableExpenses) {
     const monto = Number(v.monto) || 0;
-    const tipo = inferTipoGasto(v, "variable", customCategories);
+    const tipo = inferTipoGasto(v, "variable", ctx);
     if (tipo === TIPO_GASTO.DISCRECIONAL) {
       dscTotal += monto;
       dscExec += monto;
@@ -520,55 +405,91 @@ function calcExpenseBreakdownDetailed(data, cycleMK) {
 }
 
 // ══════════════════════════════════════════════
-// PRESUPUESTO
+// PRESUPUESTO (v2: agrupa por categoryId cuando está disponible)
 // ══════════════════════════════════════════════
 
 /**
- * Dado un array de budgets y gastos variables, devuelve por cada categoría:
- *  - presupuestado
- *  - gastado
- *  - restante
- *  - porcentaje usado
+ * Devuelve la "clave de agrupación" de un item con categoría.
+ * En v2 preferimos `categoryId`; si no está, cae al string `categoria`
+ * (compatibilidad con datos no migrados todavía).
  */
-function calcBudgetUsage(budgets, variableExpenses, cycleMK) {
+function getCatKey(item) {
+  if (item?.categoryId) return item.categoryId;
+  if (item?.categoria) return normalizeCategoryLabel(item.categoria);
+  return "";
+}
+
+/**
+ * Resuelve el label visible de una categoría para mostrar en UI/informes.
+ * Preferimos la tabla `categories`; si la clave es un string legacy no migrado,
+ * devolvemos el string tal cual.
+ */
+function labelFromKey(key, categories) {
+  if (!key) return "Sin categoría";
+  const cat = findCategoryById(categories, key);
+  if (cat) return buildCategoryLabel(cat);
+  // Key legacy (string "emoji Nombre")
+  return key;
+}
+
+function calcBudgetUsage(budgets, variableExpenses, cycleMK, categories = []) {
   const budgetsCycle = (budgets || []).filter((b) => b.cycleMK === cycleMK);
   const expensesCycle = (variableExpenses || []).filter((v) => v.month === cycleMK);
 
-  // Gastos por categoría
-  const gastosPorCat = {};
+  // Gastos agregados por clave (categoryId || string legacy)
+  const gastosPorKey = {};
   for (const v of expensesCycle) {
-    const cat = v.categoria || "Sin categoría";
-    gastosPorCat[cat] = (gastosPorCat[cat] || 0) + (Number(v.monto) || 0);
+    const key = getCatKey(v);
+    const k = key || "__sin__";
+    gastosPorKey[k] = (gastosPorKey[k] || 0) + (Number(v.monto) || 0);
   }
 
-  // Por cada presupuesto definido
   const rows = budgetsCycle.map((b) => {
-    const gastado = gastosPorCat[b.categoria] || 0;
+    const key = getCatKey(b);
+    const gastado = gastosPorKey[key] || 0;
     const restante = b.monto - gastado;
     const pct = b.monto > 0 ? (gastado / b.monto) * 100 : 0;
     return {
-      categoria: b.categoria,
+      // categoria: label visible (puede renombrarse; se resuelve fresh)
+      categoria: labelFromKey(key, categories),
+      // Mantenemos la clave original para ediciones/borrados
+      _key: key,
+      categoryId: b.categoryId || (categories.some((c) => c.id === key) ? key : ""),
       presupuestado: r2(b.monto),
       gastado: r2(gastado),
       restante: r2(restante),
       porcentaje: r2(pct),
-      estado:
-        pct >= 100 ? "excedido" : pct >= 80 ? "alerta" : "ok",
+      estado: pct >= 100 ? "excedido" : pct >= 80 ? "alerta" : "ok",
     };
   });
 
-  // Categorías con gasto pero sin presupuesto definido
-  const presupuestadas = new Set(budgetsCycle.map((b) => b.categoria));
-  const sinPresupuesto = Object.entries(gastosPorCat)
-    .filter(([cat]) => !presupuestadas.has(cat))
-    .map(([cat, monto]) => ({
-      categoria: cat,
+  const presupuestadas = new Set(budgetsCycle.map((b) => getCatKey(b)));
+  const sinPresupuesto = Object.entries(gastosPorKey)
+    .filter(([key]) => !presupuestadas.has(key) && key !== "__sin__")
+    .map(([key, monto]) => ({
+      categoria: labelFromKey(key, categories),
+      _key: key,
+      categoryId: categories.some((c) => c.id === key) ? key : "",
       presupuestado: 0,
       gastado: r2(monto),
       restante: r2(-monto),
       porcentaje: 0,
       estado: "sin_presupuesto",
     }));
+
+  // Si hay gastos sin categoría
+  if (gastosPorKey["__sin__"]) {
+    sinPresupuesto.push({
+      categoria: "Sin categoría",
+      _key: "__sin__",
+      categoryId: "",
+      presupuestado: 0,
+      gastado: r2(gastosPorKey["__sin__"]),
+      restante: r2(-gastosPorKey["__sin__"]),
+      porcentaje: 0,
+      estado: "sin_presupuesto",
+    });
+  }
 
   const totalPresupuestado = rows.reduce((s, r) => s + r.presupuestado, 0);
   const totalGastado =
@@ -587,9 +508,6 @@ function calcBudgetUsage(budgets, variableExpenses, cycleMK) {
 // METAS DE AHORRO
 // ══════════════════════════════════════════════
 
-/**
- * Progreso de una meta de ahorro (%).
- */
 function calcGoalProgress(goal, deposits) {
   if (!goal || !goal.objetivo) return { acumulado: 0, porcentaje: 0, falta: 0 };
   const acumulado = (deposits || [])
@@ -603,10 +521,6 @@ function calcGoalProgress(goal, deposits) {
   };
 }
 
-/**
- * Sugiere una meta de fondo de emergencia basada en los gastos fijos mensuales.
- * Devuelve rango conservador (3x) a saludable (6x).
- */
 function suggestEmergencyFund(fixedExpenses) {
   const mensual = (fixedExpenses || []).reduce(
     (s, f) => s + (Number(f.monto) || 0),
@@ -619,10 +533,6 @@ function suggestEmergencyFund(fixedExpenses) {
   };
 }
 
-/**
- * Dado una meta y sus aportes, estima cuánto debería aportarse por mes
- * para cumplir la fecha límite.
- */
 function calcMonthlyTarget(goal, deposits) {
   if (!goal?.fechaLimite) return null;
   const { falta } = calcGoalProgress(goal, deposits);
@@ -650,11 +560,11 @@ export {
   calcGoalProgress,
   suggestEmergencyFund,
   calcMonthlyTarget,
-  // Clasificación CF / CV / Discrecional
   TIPO_GASTO,
   inferTipoGasto,
+  resolveCategoryId,
+  getCatKey,
+  labelFromKey,
   calcExpenseBreakdown,
-  // Desglose detallado con separación "Ejecutado" vs "Total"
-  // y progreso del calendario por origen
   calcExpenseBreakdownDetailed,
 };
