@@ -5,6 +5,7 @@
 // + Métricas financieras en 3 filas × 3 cards (MetricsCards)
 // + Panel de Metas de Ahorro
 // + Categorías personalizadas propagadas a FixedExpenses y VariableExpenses
+// + 🆕 Vista "Todas las categorías" con gasto del ciclo (CategoriesOverview)
 //
 // Nota: el "Balance del ciclo" vive únicamente en MetricsCards (card superior izquierda).
 // Se eliminaron el hero grande duplicado y las 3 stat-cards pequeñas
@@ -40,6 +41,8 @@ import PaymentCalendar from "./PaymentCalendar.jsx";
 import ReportModal from "./ReportModal.jsx";
 import MetricsCards from "./MetricsCards.jsx";
 import SavingsGoals from "./SavingsGoals.jsx";
+// 🆕 Nuevo modal con el mini-informe de categorías del ciclo
+import CategoriesOverview from "./CategoriesOverview.jsx";
 
 /**
  * Dado un ciclo "YYYY-MM", devuelve el ciclo anterior "YYYY-MM".
@@ -75,6 +78,8 @@ export default function Dashboard({ user, theme, toggleTheme }) {
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [addingTo, setAddingTo] = useState(null);
   const [mobileTab, setMobileTab] = useState("home"); // home | payments | debts | more
+  // 🆕 Estado del modal de categorías del ciclo
+  const [showCategories, setShowCategories] = useState(false);
 
   useEffect(() => { isEditingRef.current = !!addingTo; }, [addingTo, isEditingRef]);
 
@@ -312,6 +317,15 @@ export default function Dashboard({ user, theme, toggleTheme }) {
                 <SavingsGoals {...savingsGoalsProps} mobileMode />
               </MobileSection>
 
+              {/* 🆕 Botón de "Categorías del ciclo" en la tab Más */}
+              <button
+                className="btn-secondary"
+                style={{ width: "100%", marginTop: 8 }}
+                onClick={() => setShowCategories(true)}
+              >
+                🏷️ Categorías del ciclo
+              </button>
+
               <button
                 className="btn-secondary"
                 style={{ width: "100%", marginTop: 8 }}
@@ -364,6 +378,15 @@ export default function Dashboard({ user, theme, toggleTheme }) {
             onClose={() => setShowReport(false)}
           />
         )}
+
+        {/* 🆕 Modal de categorías del ciclo (móvil) */}
+        {showCategories && (
+          <CategoriesOverview
+            data={data}
+            selectedMonth={selectedMonth}
+            onClose={() => setShowCategories(false)}
+          />
+        )}
       </div>
     );
   }
@@ -387,6 +410,11 @@ export default function Dashboard({ user, theme, toggleTheme }) {
             <button className="nav-item nav-item--active">
               <span className="nav-item__icon">📊</span>
               <span>Resumen</span>
+            </button>
+            {/* 🆕 Entrada "Categorías" en el sidebar desktop */}
+            <button className="nav-item" onClick={() => setShowCategories(true)}>
+              <span className="nav-item__icon">🏷️</span>
+              <span>Categorías</span>
             </button>
             <button className="nav-item" onClick={() => setShowReport(true)}>
               <span className="nav-item__icon">📋</span>
@@ -505,6 +533,15 @@ export default function Dashboard({ user, theme, toggleTheme }) {
           filteredVarExpenses={filteredVarExpenses}
           selectedMonth={selectedMonth}
           onClose={() => setShowReport(false)}
+        />
+      )}
+
+      {/* 🆕 Modal de categorías del ciclo (desktop) */}
+      {showCategories && (
+        <CategoriesOverview
+          data={data}
+          selectedMonth={selectedMonth}
+          onClose={() => setShowCategories(false)}
         />
       )}
     </div>
