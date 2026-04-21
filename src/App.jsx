@@ -7,6 +7,8 @@ import Login from "./Login.jsx";
 import Dashboard from "./components/Dashboard.jsx";
 import useTheme from "./hooks/useTheme.js";
 import "./styles/global.css";
+// 🆕 Entrega 1/3 — estilos del nuevo layout del gasto rápido
+import "./styles/quick-add-v3.css";
 
 export default function App() {
   const [user, setUser] = useState(undefined);
