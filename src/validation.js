@@ -330,8 +330,8 @@ function validateCustomCategory(cat) {
 
 /**
  * Migra la tabla de categorías custom (v1) + siembra defaults → tabla unificada v2.
- * Devuelve { categories, idByCustomId } donde idByCustomId mapea el id viejo
- * (de customCategories) al mismo id (se reusa tal cual).
+ * Devuelve el array `categories` unificado (defaults primero, custom después).
+ * Los ids de las custom se preservan tal cual para no romper referencias.
  */
 function migrateCategoriesTable(rawCustom) {
   const defaults = buildDefaultCategories();
@@ -366,3 +366,92 @@ function resolveCategoryIdFromString(label, categories) {
   const defId = resolveLegacyStringToId(normalizeCategoryLabel(label));
   if (defId && DEFAULT_IDS.has(defId)) return defId;
   // 2. Custom por label exacto
+  const list = categories || [];
+  for (const c of list) {
+    if (c.kind !== "custom") continue;
+    if (buildCategoryLabel(c) === label) return c.id;
+  }
+  // 3. No resuelto
+  return "";
+}
+
+/**
+ * Migración idempotente del objeto `data` de Firebase a esquema v2.
+ *
+ * - Si `data.schemaVersion >= SCHEMA_VERSION`, devuelve `data` tal cual.
+ * - Si no, construye `data.categories` (defaults + custom legacy) y rellena
+ *   `categoryId` en gastos fijos, gastos variables y presupuestos a partir
+ *   del string `categoria` heredado, sin destruir ese string (queda como
+ *   back-up por si algún componente legacy lo lee).
+ * - Marca `data.schemaVersion = SCHEMA_VERSION` para no volver a migrar.
+ *
+ * IMPORTANTE: esta función debe ser segura ante valores nulos/undefined en
+ * cualquier sub-array, porque puede ejecutarse sobre datos muy viejos o
+ * sobre el snapshot en pleno guardado.
+ */
+function migrateData(data) {
+  if (!data || typeof data !== "object") return data;
+  if (Number(data.schemaVersion) >= SCHEMA_VERSION) return data;
+
+  // 1. Construir tabla unificada de categorías (defaults + custom legacy)
+  const categories = migrateCategoriesTable(data.customCategories);
+
+  // 2. Helper: añadir categoryId a un item si tiene `categoria` (string)
+  //    pero no tiene `categoryId` aún. Nunca pisa un categoryId existente.
+  const withCategoryId = (item) => {
+    if (!item || typeof item !== "object") return item;
+    if (item.categoryId) return item; // ya tiene id explícito → respetar
+    const label = normalizeCategoryLabel(item.categoria || "");
+    if (!label) return item; // sin string → queda sin clasificar
+    const id = resolveCategoryIdFromString(label, categories);
+    if (!id) return item; // string desconocido → sin clasificar
+    return { ...item, categoryId: id };
+  };
+
+  // 3. Aplicar a las tres colecciones que llevan categoría
+  const fixedExpenses = (data.fixedExpenses || []).map(withCategoryId);
+  const variableExpenses = (data.variableExpenses || []).map(withCategoryId);
+  const budgets = (data.budgets || []).map(withCategoryId);
+
+  return {
+    ...data,
+    categories,
+    fixedExpenses,
+    variableExpenses,
+    budgets,
+    schemaVersion: SCHEMA_VERSION,
+  };
+}
+
+// ══════════════════════════════════════════════
+// EXPORTS
+// ══════════════════════════════════════════════
+export {
+  // Constantes
+  LIMITS,
+  SCHEMA_VERSION,
+  // Sanitizadores
+  sanitizeText,
+  sanitizeAmount,
+  sanitizeInteger,
+  // Helpers
+  isValidDate,
+  isValidMonth,
+  canAddMore,
+  // Validadores
+  validateDebt,
+  validateFixedExpense,
+  validateIncome,
+  validateVariableExpense,
+  validatePayment,
+  validateBudget,
+  validateSavingsGoal,
+  validateSavingsDeposit,
+  validateDebtExtraPayment,
+  validateCategory,
+  validateCustomCategory,
+  // Migración
+  migrateData,
+  migrateCategoriesTable,
+  resolveCategoryIdFromString,
+};
