@@ -17,7 +17,7 @@ export default function BudgetPanel({
   copyBudgetsFromPrevCycle,
   getPrevCycle,
   // Lista unificada de categorías (defaults + custom) inyectada por VariableExpenses.
-  // Si no llega (retrocompatibilidad), caemos a los defaults del tipo "variable".
+  // 🆕 Si no llega (retrocompatibilidad), caemos a la lista única global.
   allCategories,
 }) {
   const [editingCat, setEditingCat] = useState(null); // categoría en edición
@@ -26,12 +26,12 @@ export default function BudgetPanel({
   const [newCat, setNewCat] = useState("");
   const [newAmount, setNewAmount] = useState("");
 
-  // Fuente de categorías a ofrecer al crear un presupuesto:
-  // si nos pasaron `allCategories` la usamos (incluye custom),
-  // si no, defaults del tipo variable — así nunca llega array vacío.
+  // 🆕 Fuente de categorías a ofrecer al crear un presupuesto:
+  // - Si nos pasaron `allCategories`, la usamos (incluye custom + defaults unificadas).
+  // - Si no, caemos a la lista única de defaults.
   const categoriesSource = (allCategories && allCategories.length > 0)
     ? allCategories
-    : getDefaultCategories("variable");
+    : getDefaultCategories();
 
   // Cálculo del uso del presupuesto por categoría
   const usage = calcBudgetUsage(budgets, variableExpenses, cycleMK);
