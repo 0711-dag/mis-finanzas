@@ -4,9 +4,17 @@
 // v2: agrupa por categoryId. Si un item no tiene categoryId pero tiene
 // `categoria` (string legacy) y resuelve a una default conocida, también
 // se agrupa correctamente. Los huérfanos van a "Sin categoría".
+//
+// 🛡️ Fallback defensivo: si `data.categories` llega vacío, sembramos los
+// defaults al vuelo para que el label resuelva siempre a un nombre bonito
+// (no al id crudo como `default_vivienda`).
 // ══════════════════════════════════════════════
 import { r2, resolveCategoryId } from "./finance.js";
-import { findCategoryById, buildCategoryLabel } from "./categoryDefaults.js";
+import {
+  findCategoryById,
+  buildCategoryLabel,
+  buildDefaultCategories,
+} from "./categoryDefaults.js";
 
 export function calcCategoriesOverview(data, cycleMK) {
   const empty = {
@@ -18,7 +26,24 @@ export function calcCategoriesOverview(data, cycleMK) {
   };
   if (!data || !cycleMK) return empty;
 
-  const categories = data.categories || [];
+  // 🛡️ Garantizar que tenemos una tabla utilizable para resolver labels.
+  // Si `data.categories` está vacío por cualquier motivo (migración no
+  // completada, estado intermedio…), sembramos los defaults al vuelo.
+  // Las custom (si las hubiera) se toman del legacy `customCategories`
+  // para no perder referencias a categorías de usuario.
+  let categories = Array.isArray(data.categories) ? data.categories : [];
+  if (categories.length === 0) {
+    const defaults = buildDefaultCategories();
+    const legacyCustoms = (data.customCategories || []).map((c) => ({
+      id: c.id || `legacy_${c.nombre}`,
+      kind: "custom",
+      nombre: c.nombre || "Sin nombre",
+      emoji: c.emoji || "📦",
+      tipoGasto: c.tipoGasto || "",
+      createdAt: c.createdAt || 0,
+    }));
+    categories = [...defaults, ...legacyCustoms];
+  }
 
   // Mapa por ID de categoría
   const porId = {};
@@ -91,36 +116,11 @@ export function calcCategoriesOverview(data, cycleMK) {
   const categorias = Object.entries(porId)
     .map(([id, stats]) => {
       const cat = findCategoryById(categories, id);
-      const label = cat ? buildCategoryLabel(cat) : id; // fallback: el id
+      // 🛡️ Si por lo que sea no se encuentra, usamos un label genérico
+      // en vez del id crudo (que era el bug de la UI).
+      const label = cat ? buildCategoryLabel(cat) : "📦 Categoría desconocida";
       return {
         categoryId: id,
         categoria: label,
         total: r2(stats.total),
         pagado: r2(stats.pagado),
-        pendiente: r2(stats.pendiente),
-        items: stats.items,
-      };
-    })
-    .sort((a, b) => b.total - a.total);
-
-  const totalCategorizado = categorias.reduce((s, c) => s + c.total, 0);
-  const totalCiclo = totalCategorizado + sinCat.total + cuotas.total;
-
-  return {
-    categorias,
-    totalCategorizado: r2(totalCategorizado),
-    sinCategoria: {
-      total: r2(sinCat.total),
-      pagado: r2(sinCat.pagado),
-      pendiente: r2(sinCat.pendiente),
-      items: sinCat.items,
-    },
-    cuotasDeuda: {
-      total: r2(cuotas.total),
-      pagado: r2(cuotas.pagado),
-      pendiente: r2(cuotas.pendiente),
-      items: cuotas.items,
-    },
-    totalCiclo: r2(totalCiclo),
-  };
-}
