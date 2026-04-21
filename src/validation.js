@@ -1,7 +1,14 @@
 // ══════════════════════════════════════════════
 // 🔒 Validación y sanitización de datos
 // ══════════════════════════════════════════════
-import { normalizeCategoryLabel } from "./utils/categoryDefaults.js";
+import {
+  normalizeCategoryLabel,
+  resolveLegacyStringToId,
+  buildDefaultCategories,
+  buildCategoryLabel,
+  DEFAULT_IDS,
+} from "./utils/categoryDefaults.js";
+import { genId } from "./utils/format.js";
 
 // Límites para evitar abuso de la base de datos
 const LIMITS = {
@@ -15,24 +22,24 @@ const LIMITS = {
   MAX_SAVINGS_GOALS: 20,
   MAX_SAVINGS_DEPOSITS: 500,
   MAX_DEBT_PAYMENTS: 500,
-  MAX_CUSTOM_CATEGORIES: 50,   // categorías custom por usuario
+  MAX_CUSTOM_CATEGORIES: 50,
   MAX_AMOUNT: 99_999_999,
   MAX_CUOTAS: 360,
 };
 
-// Tipos permitidos
 const DEBT_TYPES = ["tarjeta", "cuotas", "prestamo"];
 const INCOME_TYPES = ["fijo", "variable"];
 const GOAL_TYPES = ["emergencia", "personalizada"];
 
-// 🆕 Tipos de categoría: ahora las categorías son globales, así que
-// aceptamos "any" (recomendado para nuevas) además de "fixed"/"variable"
-// por compatibilidad con datos antiguos.
+// Compatibilidad: sigue aceptado en validateCustomCategory
 const CATEGORY_TYPES = ["fixed", "variable", "any"];
 
-// 🆕 Clasificación contable por defecto para nuevas categorías custom.
-// El usuario puede elegir una distinta al crearla.
+// Clasificación contable admitida
 const TIPO_GASTO_VALUES = ["CF", "CV", "Discrecional"];
+
+// 🆕 Versión del esquema. Si data.schemaVersion < SCHEMA_VERSION,
+// se aplica migración v1 → v2 una sola vez.
+const SCHEMA_VERSION = 2;
 
 function sanitizeText(text, maxLen = LIMITS.MAX_TEXT_LENGTH) {
   if (typeof text !== "string") return "";
@@ -81,6 +88,7 @@ function canAddMore(section, currentData) {
     savingsDeposits: LIMITS.MAX_SAVINGS_DEPOSITS,
     debtPayments: LIMITS.MAX_DEBT_PAYMENTS,
     customCategories: LIMITS.MAX_CUSTOM_CATEGORIES,
+    categories: LIMITS.MAX_CUSTOM_CATEGORIES + 50, // defaults + custom
   };
   const max = limits[section];
   if (!max) return true;
@@ -133,8 +141,9 @@ function validateFixedExpense(expense) {
     diaPago: sanitizeText(expense.diaPago, 10),
     monto: sanitizeAmount(expense.monto),
     recurrente: !!expense.recurrente,
-    // 🆕 Normalizamos la categoría a la etiqueta unificada si hace falta
-    categoria: normalizeCategoryLabel(sanitizeText(expense.categoria, 30)),
+    // 🆕 v2: categoryId es el campo autoritativo; categoria (string) se mantiene como back-up
+    categoryId: sanitizeText(expense.categoryId || "", 40),
+    categoria: normalizeCategoryLabel(sanitizeText(expense.categoria || "", 30)),
   };
   if (!clean.concepto) errors.push("Falta el concepto");
   if (clean.monto <= 0) errors.push("El monto debe ser mayor que 0");
@@ -172,8 +181,9 @@ function validateVariableExpense(expense) {
     monto: sanitizeAmount(expense.monto),
     fecha: expense.fecha,
     month: expense.month,
-    // 🆕 Normalizamos la categoría a la etiqueta unificada si hace falta
-    categoria: normalizeCategoryLabel(sanitizeText(expense.categoria, 30)),
+    // 🆕 v2
+    categoryId: sanitizeText(expense.categoryId || "", 40),
+    categoria: normalizeCategoryLabel(sanitizeText(expense.categoria || "", 30)),
   };
   if (!clean.concepto) errors.push("Falta el concepto");
   if (clean.monto <= 0) errors.push("El monto debe ser mayor que 0");
@@ -201,12 +211,13 @@ function validateBudget(budget) {
   const errors = [];
   const clean = {
     cycleMK: budget.cycleMK,
-    // 🆕 Normalizamos la categoría a la etiqueta unificada
-    categoria: normalizeCategoryLabel(sanitizeText(budget.categoria, 30)),
+    // 🆕 v2
+    categoryId: sanitizeText(budget.categoryId || "", 40),
+    categoria: normalizeCategoryLabel(sanitizeText(budget.categoria || "", 30)),
     monto: sanitizeAmount(budget.monto),
   };
   if (!isValidMonth(clean.cycleMK)) errors.push("Ciclo inválido");
-  if (!clean.categoria) errors.push("Falta la categoría");
+  if (!clean.categoryId && !clean.categoria) errors.push("Falta la categoría");
   if (clean.monto <= 0) errors.push("El monto presupuestado debe ser mayor que 0");
   return { valid: errors.length === 0, errors, data: clean };
 }
@@ -262,32 +273,26 @@ function validateDebtExtraPayment(payment) {
 }
 
 // ══════════════════════════════════════════════
-// 🆕 VALIDADOR DE CATEGORÍAS CUSTOM
+// 🆕 VALIDADOR DE CATEGORÍAS (v2)
+//
+// Ahora valida cualquier categoría (default o custom) editada o creada.
+// kind: "default" | "custom"
 // ══════════════════════════════════════════════
 
-/**
- * Valida una categoría personalizada creada por el usuario.
- * - `tipo` debe ser "fixed" | "variable" | "any"; "any" es el recomendado
- *   porque la lista ahora es única. Si llega vacío, se asume "any".
- * - `nombre` obligatorio, máx. 25 caracteres visibles
- * - `emoji` opcional; si falta, se usará 📦 como fallback
- * - `tipoGasto` opcional; si viene, debe ser "CF" | "CV" | "Discrecional".
- *   Si no viene, se deja undefined y se infiere por nombre/origen.
- */
-function validateCustomCategory(cat) {
+function validateCategory(cat) {
   const errors = [];
-  const tipoRaw = typeof cat.tipo === "string" ? cat.tipo.toLowerCase() : "any";
-  const tipo = CATEGORY_TYPES.includes(tipoRaw) ? tipoRaw : "any";
+
+  const kindRaw = typeof cat.kind === "string" ? cat.kind : "custom";
+  const kind = (kindRaw === "default" || kindRaw === "custom") ? kindRaw : "custom";
 
   const tipoGastoRaw = typeof cat.tipoGasto === "string" ? cat.tipoGasto : "";
   const tipoGasto = TIPO_GASTO_VALUES.includes(tipoGastoRaw) ? tipoGastoRaw : "";
 
   const clean = {
-    tipo,
+    kind,
     nombre: sanitizeText(cat.nombre, 25),
-    // El emoji puede contener caracteres como "🛡️" (con variante) → no lo sanitizamos agresivamente.
     emoji: typeof cat.emoji === "string" ? cat.emoji.trim().slice(0, 4) : "",
-    tipoGasto, // "" si no se declaró → el cálculo usará la inferencia
+    tipoGasto,
   };
 
   if (!clean.nombre) errors.push("Falta el nombre de la categoría");
@@ -296,73 +301,68 @@ function validateCustomCategory(cat) {
   return { valid: errors.length === 0, errors, data: clean };
 }
 
-// ══════════════════════════════════════════════
-// MIGRACIÓN AUTOMÁTICA DE DATOS EXISTENTES
-// Aplica valores por defecto sin romper nada + 🆕 normaliza categorías
-// antiguas ("⛽ Transporte" → "🚗 Transporte", "🏠 Hogar" → "🏠 Vivienda").
-// ══════════════════════════════════════════════
-function migrateData(rawData) {
-  if (!rawData) return rawData;
-
-  return {
-    debts: (rawData.debts || []).map((d) => ({
-      tipo: d.tipo && DEBT_TYPES.includes(d.tipo) ? d.tipo : "cuotas",
-      limiteCredito: d.limiteCredito || 0,
-      pagoMinimo: d.pagoMinimo || 0,
-      tasaInteres: d.tasaInteres || 0,
-      ...d,
-    })),
-    payments: rawData.payments || [],
-    fixedExpenses: (rawData.fixedExpenses || []).map((f) => ({
-      ...f,
-      // 🆕 Normalizar categoría legacy (no sobreescribe las que ya son válidas)
-      categoria: normalizeCategoryLabel(f.categoria || ""),
-    })),
-    incomes: (rawData.incomes || []).map((i) => ({
-      titular: i.titular || "yo",
-      tipo: i.tipo && INCOME_TYPES.includes(i.tipo) ? i.tipo : "fijo",
-      ...i,
-    })),
-    // 🆕 Normalizar categorías en gastos variables
-    variableExpenses: (rawData.variableExpenses || []).map((v) => ({
-      ...v,
-      categoria: normalizeCategoryLabel(v.categoria || ""),
-    })),
-    // 🆕 Normalizar categorías en presupuestos (para que se sigan vinculando)
-    budgets: (rawData.budgets || []).map((b) => ({
-      ...b,
-      categoria: normalizeCategoryLabel(b.categoria || ""),
-    })),
-    savingsGoals: rawData.savingsGoals || [],
-    savingsDeposits: rawData.savingsDeposits || [],
-    debtPayments: rawData.debtPayments || [],
-    // Categorías custom — array vacío por defecto para usuarios existentes
-    customCategories: rawData.customCategories || [],
-  };
+/**
+ * Compatibilidad hacia atrás: en Entrega 1 se llamaba validateCustomCategory
+ * y recibía { tipo, nombre, emoji, tipoGasto }. Se mantiene como alias del
+ * nuevo validateCategory ignorando `tipo`.
+ */
+function validateCustomCategory(cat) {
+  return validateCategory({
+    kind: "custom",
+    nombre: cat.nombre,
+    emoji: cat.emoji,
+    tipoGasto: cat.tipoGasto,
+  });
 }
 
-export {
-  LIMITS,
-  DEBT_TYPES,
-  INCOME_TYPES,
-  GOAL_TYPES,
-  CATEGORY_TYPES,
-  TIPO_GASTO_VALUES,
-  sanitizeText,
-  sanitizeAmount,
-  sanitizeInteger,
-  isValidDate,
-  isValidMonth,
-  canAddMore,
-  migrateData,
-  validateDebt,
-  validateFixedExpense,
-  validateIncome,
-  validateVariableExpense,
-  validatePayment,
-  validateBudget,
-  validateSavingsGoal,
-  validateSavingsDeposit,
-  validateDebtExtraPayment,
-  validateCustomCategory,
-};
+// ══════════════════════════════════════════════
+// MIGRACIÓN AUTOMÁTICA v1 → v2
+//
+// Convierte:
+//   - data.customCategories[] → data.categories[] (unificada: default+custom)
+//   - fixedExpenses[].categoria (string) → + categoryId (ID estable)
+//   - variableExpenses[].categoria (string) → + categoryId
+//   - budgets[].categoria (string) → + categoryId
+//
+// Mantiene el campo `categoria` original como back-up de solo lectura.
+// Marca data.schemaVersion = 2 para no repetir la migración.
+// ══════════════════════════════════════════════
+
+/**
+ * Migra la tabla de categorías custom (v1) + siembra defaults → tabla unificada v2.
+ * Devuelve { categories, idByCustomId } donde idByCustomId mapea el id viejo
+ * (de customCategories) al mismo id (se reusa tal cual).
+ */
+function migrateCategoriesTable(rawCustom) {
+  const defaults = buildDefaultCategories();
+
+  // Las custom se preservan tal cual (su id no cambia, pasan a kind:"custom").
+  const customs = (rawCustom || []).map((c) => ({
+    id: c.id || genId(),
+    kind: "custom",
+    nombre: sanitizeText(c.nombre || "", 25) || "Sin nombre",
+    emoji: (typeof c.emoji === "string" && c.emoji.trim()) ? c.emoji.trim().slice(0, 4) : "📦",
+    tipoGasto: TIPO_GASTO_VALUES.includes(c.tipoGasto) ? c.tipoGasto : "",
+    createdAt: Number(c.createdAt) || Date.now(),
+  }));
+
+  return [...defaults, ...customs];
+}
+
+/**
+ * Dado un string legacy "emoji Nombre" y la tabla `categories` ya construida,
+ * devuelve el categoryId resuelto.
+ * Estrategia:
+ *  1. Si es una default conocida → devolvemos su id estable.
+ *  2. Si matchea el label de alguna custom → devolvemos su id.
+ *  3. Si no → devolvemos "" (gasto queda sin categoría).
+ *
+ * Nunca crea categorías nuevas: los strings desconocidos caen como
+ * "sin categoría" (mismo tratamiento que ya tienen los gastos sin string).
+ */
+function resolveCategoryIdFromString(label, categories) {
+  if (!label || typeof label !== "string") return "";
+  // 1. Default por string (actual o legacy)
+  const defId = resolveLegacyStringToId(normalizeCategoryLabel(label));
+  if (defId && DEFAULT_IDS.has(defId)) return defId;
+  // 2. Custom por label exacto
