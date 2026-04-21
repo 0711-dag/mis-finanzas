@@ -1,31 +1,30 @@
 // ══════════════════════════════════════════════
-// 🏷️ CategoriesOverview
+// 🏷️ CategoriesOverview (v2)
 // Modal con el mini-informe de categorías del ciclo:
 //  - fila por categoría con barra proporcional
 //  - desglose pagado / pendiente por categoría
 //  - cuotas de deuda aparte (no cuentan como categoría de usuario)
 //  - "Sin categoría" si corresponde
 //
-// Se abre desde Dashboard (sidebar desktop / tab "Más" móvil).
-// Comparte look & feel con ReportModal.
+// v2: agrupa por categoryId y lee el label fresco desde data.categories,
+// por lo que renombrar una categoría se refleja inmediatamente aquí.
 // ══════════════════════════════════════════════
 import { fmt } from "../utils/format.js";
 import { formatMonthLabelWithCycle } from "../utils/cycle.js";
 import { calcCategoriesOverview } from "../utils/categoriesOverview.js";
 
-// Extrae el emoji inicial de una categoría tipo "🏠 Vivienda"
-function extractEmoji(categoria) {
-  if (!categoria || typeof categoria !== "string") return "📦";
-  const first = categoria.trim().split(/\s+/)[0];
-  // Si el primer token tiene letras, no es un emoji
+// Extrae el emoji inicial de "🏠 Vivienda"
+function extractEmoji(label) {
+  if (!label || typeof label !== "string") return "📦";
+  const first = label.trim().split(/\s+/)[0];
   if (/[a-záéíóúñA-ZÁÉÍÓÚÑ]/.test(first || "")) return "📦";
   return first || "📦";
 }
 
-// Extrae el nombre (sin emoji) de una categoría tipo "🏠 Vivienda"
-function extractName(categoria) {
-  if (!categoria || typeof categoria !== "string") return "";
-  const parts = categoria.trim().split(/\s+/);
+// Extrae el nombre (sin emoji)
+function extractName(label) {
+  if (!label || typeof label !== "string") return "";
+  const parts = label.trim().split(/\s+/);
   if (parts.length > 1 && !/[a-záéíóúñA-ZÁÉÍÓÚÑ]/.test(parts[0])) {
     return parts.slice(1).join(" ");
   }
@@ -34,34 +33,28 @@ function extractName(categoria) {
 
 export default function CategoriesOverview({ data, selectedMonth, onClose }) {
   const overview = calcCategoriesOverview(data, selectedMonth);
-  const { categorias, totalCategorizado, sinCategoria, cuotasDeuda, totalCiclo } = overview;
+  const { categorias, sinCategoria, cuotasDeuda, totalCiclo } = overview;
 
-  // Referencia para dimensionar las barras: el mayor de los totales mostrados
   const maxTotal = Math.max(
     ...categorias.map((c) => c.total),
     sinCategoria.total,
     cuotasDeuda.total,
-    1 // evita división por cero
+    1
   );
 
-  // Porcentaje sobre el total del ciclo (para el % a la derecha)
   const pctDe = (monto) => (totalCiclo > 0 ? (monto / totalCiclo) * 100 : 0);
 
-  // Barra vacía si no hay gasto alguno
   const vacio = totalCiclo === 0;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
         <div className="modal__header">
           <div className="modal__title">🏷️ Categorías del ciclo</div>
           <button className="modal__close" onClick={onClose} aria-label="Cerrar">✕</button>
         </div>
 
-        {/* Body */}
         <div className="modal__body">
-          {/* Encabezado del ciclo */}
           <div style={{
             fontSize: 12,
             color: "var(--text-secondary)",
@@ -87,7 +80,6 @@ export default function CategoriesOverview({ data, selectedMonth, onClose }) {
             </div>
           ) : (
             <>
-              {/* ─── Total del ciclo ─── */}
               <div style={{
                 background: "var(--bg-surface)",
                 borderRadius: "var(--radius-md)",
@@ -125,7 +117,6 @@ export default function CategoriesOverview({ data, selectedMonth, onClose }) {
                 </div>
               </div>
 
-              {/* ─── Lista de categorías ─── */}
               <div style={{
                 fontSize: 10,
                 fontWeight: 700,
@@ -140,11 +131,10 @@ export default function CategoriesOverview({ data, selectedMonth, onClose }) {
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
                 {categorias.map((c) => (
                   <CategoryRow
-                    key={c.categoria}
+                    key={c.categoryId}
                     emoji={extractEmoji(c.categoria)}
                     nombre={extractName(c.categoria) || c.categoria}
                     total={c.total}
-                    pagado={c.pagado}
                     pendiente={c.pendiente}
                     items={c.items}
                     pct={pctDe(c.total)}
@@ -153,13 +143,11 @@ export default function CategoriesOverview({ data, selectedMonth, onClose }) {
                   />
                 ))}
 
-                {/* Sin categoría — solo si hay */}
                 {sinCategoria.total > 0 && (
                   <CategoryRow
                     emoji="❓"
                     nombre="Sin categoría"
                     total={sinCategoria.total}
-                    pagado={sinCategoria.pagado}
                     pendiente={sinCategoria.pendiente}
                     items={sinCategoria.items}
                     pct={pctDe(sinCategoria.total)}
@@ -170,7 +158,6 @@ export default function CategoriesOverview({ data, selectedMonth, onClose }) {
                 )}
               </div>
 
-              {/* ─── Cuotas de deuda (bloque aparte) ─── */}
               {cuotasDeuda.total > 0 && (
                 <>
                   <div style={{
@@ -188,7 +175,6 @@ export default function CategoriesOverview({ data, selectedMonth, onClose }) {
                     emoji="💳"
                     nombre="Cuotas de deuda"
                     total={cuotasDeuda.total}
-                    pagado={cuotasDeuda.pagado}
                     pendiente={cuotasDeuda.pendiente}
                     items={cuotasDeuda.items}
                     pct={pctDe(cuotasDeuda.total)}
@@ -198,7 +184,6 @@ export default function CategoriesOverview({ data, selectedMonth, onClose }) {
                 </>
               )}
 
-              {/* ─── Nota al pie ─── */}
               <div style={{
                 fontSize: 11,
                 color: "var(--text-tertiary)",
@@ -208,7 +193,7 @@ export default function CategoriesOverview({ data, selectedMonth, onClose }) {
                 background: "var(--bg-subtle)",
                 borderRadius: "var(--radius-sm)",
               }}>
-                💡 El gasto incluye pagos ya realizados (✓) y pagos pendientes del ciclo. Los gastos variables cuentan siempre como ya ejecutados.
+                💡 El gasto incluye pagos ya realizados y pagos pendientes del ciclo. Los gastos variables cuentan siempre como ya ejecutados.
               </div>
             </>
           )}
@@ -218,10 +203,7 @@ export default function CategoriesOverview({ data, selectedMonth, onClose }) {
   );
 }
 
-// ══════════════════════════════════════════════
-// Subcomponente: fila de una categoría con barra proporcional
-// ══════════════════════════════════════════════
-function CategoryRow({ emoji, nombre, total, pagado, pendiente, items, pct, barPct, color, muted }) {
+function CategoryRow({ emoji, nombre, total, pendiente, items, pct, barPct, color, muted }) {
   return (
     <div style={{
       background: "var(--bg-surface)",
@@ -230,7 +212,6 @@ function CategoryRow({ emoji, nombre, total, pagado, pendiente, items, pct, barP
       padding: "10px 12px",
       opacity: muted ? 0.85 : 1,
     }}>
-      {/* Fila superior: emoji + nombre + total + % */}
       <div style={{
         display: "flex",
         justifyContent: "space-between",
@@ -286,7 +267,6 @@ function CategoryRow({ emoji, nombre, total, pagado, pendiente, items, pct, barP
         </div>
       </div>
 
-      {/* Barra proporcional sobre la mayor */}
       <div className="progress" style={{ height: 4 }}>
         <div
           className="progress__fill"
