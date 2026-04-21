@@ -50,3 +50,37 @@ export default function useCategories(_tipo, categoriesRaw, customCategoriesLega
     // Orden: defaults por campo `orden`, después custom por createdAt asc
     const defaults = list
       .filter((c) => c.kind === "default")
+      .slice()
+      .sort((a, b) => (Number(a.orden) || 0) - (Number(b.orden) || 0));
+
+    const customs = list
+      .filter((c) => c.kind === "custom")
+      .slice()
+      .sort((a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0));
+
+    const ordered = [...defaults, ...customs];
+
+    // items: forma "rica" lista para renderizar selects modernos.
+    const items = ordered.map((c) => ({
+      id: c.id,
+      label: buildCategoryLabel(c),
+      emoji: c.emoji || "📦",
+      nombre: c.nombre || "",
+      kind: c.kind || "custom",
+      tipoGasto: c.tipoGasto || "",
+    }));
+
+    // options: forma legacy "emoji Nombre" para componentes v1 sin actualizar.
+    const options = items.map((it) => it.label);
+
+    // Helper para look-up por id en la lista ya ordenada.
+    const findById = (id) => findCategoryById(ordered, id);
+
+    return {
+      items,
+      options,
+      categories: ordered,
+      findById,
+    };
+  }, [categoriesRaw, customCategoriesLegacy]);
+}
