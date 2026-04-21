@@ -1,30 +1,90 @@
 // ══════════════════════════════════════════════
-// 📱 Bottom-sheet de gasto rápido
+// 📱 Bottom-sheet de gasto rápido (v2)
+//
+// v2: los chips de categoría rápida se generan a partir de data.categories
+// (las primeras N defaults, por orden). Al seleccionar una, se guarda el
+// categoryId en el nuevo gasto (y también categoria como back-up string).
 // ══════════════════════════════════════════════
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { fmt, todayISO } from "../../utils/format.js";
 import { dateToFinancialMonth } from "../../utils/cycle.js";
+import { buildCategoryLabel } from "../../utils/categoryDefaults.js";
 
-const QUICK_CATEGORIES = [
-  { emoji: "🛒", label: "Super", full: "🛒 Supermercado" },
-  { emoji: "⛽", label: "Transp.", full: "⛽ Transporte" },
-  { emoji: "🍽️", label: "Restau.", full: "🍽️ Restaurantes" },
-  { emoji: "🏠", label: "Hogar", full: "🏠 Hogar" },
-  { emoji: "🏥", label: "Salud", full: "🏥 Salud" },
-  { emoji: "🎉", label: "Ocio", full: "🎉 Ocio" },
-  { emoji: "👕", label: "Ropa", full: "👕 Ropa" },
-  { emoji: "📦", label: "Otros", full: "📦 Otros" },
+// Fallback por si `data.categories` no llega por algún motivo (muy improbable
+// tras la migración v2, pero cubrimos la esquina). Se muestran sin ID.
+const FALLBACK_CHIPS = [
+  { id: "", emoji: "🛒", label: "Super" },
+  { id: "", emoji: "🚗", label: "Transp." },
+  { id: "", emoji: "🍽️", label: "Restau." },
+  { id: "", emoji: "🏠", label: "Hogar" },
+  { id: "", emoji: "🏥", label: "Salud" },
+  { id: "", emoji: "🎉", label: "Ocio" },
+  { id: "", emoji: "👕", label: "Ropa" },
+  { id: "", emoji: "📦", label: "Otros" },
 ];
 
-export default function QuickAddSheet({ addRow, selectedMonth, onClose }) {
+// Qué defaults (por id) queremos priorizar en el quick-add.
+// El orden importa: salen de izq→der en la cuadrícula.
+const QUICK_PREFERRED_IDS = [
+  "default_supermercado",
+  "default_transporte",
+  "default_restaurantes",
+  "default_vivienda",
+  "default_salud",
+  "default_ocio",
+  "default_ropa",
+  "default_otros",
+];
+
+export default function QuickAddSheet({ addRow, selectedMonth, onClose, data }) {
   const [concepto, setConcepto] = useState("");
   const [monto, setMonto] = useState("");
-  const [categoria, setCategoria] = useState("");
+  const [categoryId, setCategoryId] = useState("");
   const [fecha, setFecha] = useState(todayISO());
-  const [dateChip, setDateChip] = useState("today"); // today | yesterday | custom
+  const [dateChip, setDateChip] = useState("today");
   const [success, setSuccess] = useState(false);
   const [shake, setShake] = useState(false);
   const amountRef = useRef(null);
+
+  // Construir chips desde data.categories (preferidas + primeras custom si faltan)
+  const chips = useMemo(() => {
+    const categories = data?.categories || [];
+    if (categories.length === 0) return FALLBACK_CHIPS;
+
+    const byId = {};
+    categories.forEach((c) => { byId[c.id] = c; });
+
+    const list = [];
+
+    // Primero las preferidas que existan
+    for (const id of QUICK_PREFERRED_IDS) {
+      if (byId[id]) {
+        const c = byId[id];
+        list.push({
+          id: c.id,
+          emoji: c.emoji || "📦",
+          // Recortamos el label a 7 chars para que quepa bien en el chip
+          label: c.nombre.length > 8 ? c.nombre.slice(0, 7) + "." : c.nombre,
+        });
+      }
+    }
+
+    // Rellenar con customs populares si aún no llegamos a 8
+    if (list.length < 8) {
+      const picked = new Set(list.map((x) => x.id));
+      const customs = categories.filter((c) => c.kind === "custom" && !picked.has(c.id));
+      for (const c of customs) {
+        if (list.length >= 8) break;
+        list.push({
+          id: c.id,
+          emoji: c.emoji || "📦",
+          label: c.nombre.length > 8 ? c.nombre.slice(0, 7) + "." : c.nombre,
+        });
+      }
+    }
+
+    return list.length > 0 ? list : FALLBACK_CHIPS;
+  }, [data?.categories]);
 
   useEffect(() => {
     setTimeout(() => amountRef.current?.focus(), 150);
@@ -53,12 +113,19 @@ export default function QuickAddSheet({ addRow, selectedMonth, onClose }) {
       return;
     }
 
+    // Resolver label para back-up categoria (string) desde data.categories
+    const cat = categoryId && data?.categories
+      ? (data.categories || []).find((c) => c.id === categoryId)
+      : null;
+    const categoriaLabel = cat ? buildCategoryLabel(cat) : "";
+
     const result = addRow("variableExpenses", {
       concepto: concepto.trim(),
       monto: parseFloat(monto) || 0,
       fecha,
       month: dateToFinancialMonth(fecha) || selectedMonth,
-      categoria: categoria || "",
+      categoryId: categoryId || "",
+      categoria: categoriaLabel,
     });
 
     if (result) {
@@ -100,7 +167,6 @@ export default function QuickAddSheet({ addRow, selectedMonth, onClose }) {
           <>
             <h2 className="sheet__title">Gasto rápido</h2>
 
-            {/* Monto grande */}
             <div className="amount-input-wrap">
               <input
                 ref={amountRef}
@@ -118,7 +184,6 @@ export default function QuickAddSheet({ addRow, selectedMonth, onClose }) {
               <span className="amount-input__currency">€</span>
             </div>
 
-            {/* Concepto */}
             <input
               className="sheet-input"
               type="text"
@@ -130,7 +195,6 @@ export default function QuickAddSheet({ addRow, selectedMonth, onClose }) {
               autoComplete="off"
             />
 
-            {/* Fecha chips */}
             <div className="date-chips">
               <button
                 className={`date-chip ${dateChip === "today" ? "date-chip--active" : ""}`}
@@ -161,21 +225,24 @@ export default function QuickAddSheet({ addRow, selectedMonth, onClose }) {
               />
             </div>
 
-            {/* Categorías */}
             <div className="cat-chips">
-              {QUICK_CATEGORIES.map((c) => (
-                <button
-                  key={c.full}
-                  className={`cat-chip ${categoria === c.full ? "cat-chip--active" : ""}`}
-                  onClick={() => setCategoria(categoria === c.full ? "" : c.full)}
-                >
-                  <span className="cat-chip__emoji">{c.emoji}</span>
-                  <span>{c.label}</span>
-                </button>
-              ))}
+              {chips.map((c) => {
+                const activo = categoryId && c.id && categoryId === c.id;
+                return (
+                  <button
+                    key={c.id || c.label}
+                    className={`cat-chip ${activo ? "cat-chip--active" : ""}`}
+                    onClick={() => setCategoryId(activo ? "" : c.id)}
+                    disabled={!c.id}
+                    title={!c.id ? "Esta categoría no está disponible aún" : ""}
+                  >
+                    <span className="cat-chip__emoji">{c.emoji}</span>
+                    <span>{c.label}</span>
+                  </button>
+                );
+              })}
             </div>
 
-            {/* Save */}
             <button
               className="btn-primary btn-primary--accent"
               onClick={handleSave}
