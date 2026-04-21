@@ -1,12 +1,17 @@
 // ══════════════════════════════════════════════
-// 📊 Panel de Presupuesto
-// Se muestra dentro de VariableExpenses al pulsar "Ver presupuesto"
-// Permite definir/editar el presupuesto por categoría y ver el consumo real
+// 📊 Panel de Presupuesto (v2)
+//
+// Recibe:
+//   - allCategoryItems: array de {id, label, emoji, nombre, ...}
+//     (devuelto por useCategories en v2). Si llega, el selector usa IDs.
+//   - categories: data.categories (para pasar al cálculo)
+//
+// Llama a addOrUpdateBudget / removeBudget con opts.categoryId=true
+// siempre que se trabaje con IDs de v2.
 // ══════════════════════════════════════════════
 import { useState } from "react";
 import { fmt } from "../utils/format.js";
 import { calcBudgetUsage } from "../utils/finance.js";
-import { getDefaultCategories } from "../utils/categoryDefaults.js";
 
 export default function BudgetPanel({
   budgets,
@@ -16,66 +21,60 @@ export default function BudgetPanel({
   removeBudget,
   copyBudgetsFromPrevCycle,
   getPrevCycle,
-  // Lista unificada de categorías (defaults + custom) inyectada por VariableExpenses.
-  // 🆕 Si no llega (retrocompatibilidad), caemos a la lista única global.
-  allCategories,
+  allCategoryItems,       // 🆕 v2: array de objetos [{id, label, ...}]
+  categories,             // 🆕 v2: data.categories (para el cálculo)
 }) {
-  const [editingCat, setEditingCat] = useState(null); // categoría en edición
+  const [editingKey, setEditingKey] = useState(null); // _key de la categoría editando
   const [editValue, setEditValue] = useState("");
   const [showAdd, setShowAdd] = useState(false);
-  const [newCat, setNewCat] = useState("");
+  const [newCatId, setNewCatId] = useState("");
   const [newAmount, setNewAmount] = useState("");
 
-  // 🆕 Fuente de categorías a ofrecer al crear un presupuesto:
-  // - Si nos pasaron `allCategories`, la usamos (incluye custom + defaults unificadas).
-  // - Si no, caemos a la lista única de defaults.
-  const categoriesSource = (allCategories && allCategories.length > 0)
-    ? allCategories
-    : getDefaultCategories();
+  const itemsSource = Array.isArray(allCategoryItems) && allCategoryItems.length > 0
+    ? allCategoryItems
+    : [];
 
-  // Cálculo del uso del presupuesto por categoría
-  const usage = calcBudgetUsage(budgets, variableExpenses, cycleMK);
+  const usage = calcBudgetUsage(budgets, variableExpenses, cycleMK, categories || []);
   const { categorias, totalPresupuestado, totalGastado, totalRestante } = usage;
 
-  // Porcentaje total del presupuesto
   const pctTotal = totalPresupuestado > 0 ? (totalGastado / totalPresupuestado) * 100 : 0;
 
-  // Categorías disponibles para añadir (que no tengan ya presupuesto)
+  // Categorías con presupuesto ya definido (para excluirlas del select "añadir")
   const yaPresupuestadas = new Set(
-    categorias.filter((c) => c.presupuestado > 0).map((c) => c.categoria)
+    categorias.filter((c) => c.presupuestado > 0).map((c) => c._key)
   );
-  const disponibles = categoriesSource.filter((c) => !yaPresupuestadas.has(c));
+  const disponibles = itemsSource.filter((c) => !yaPresupuestadas.has(c.id));
 
-  // Guardar edición de una categoría existente
-  const handleSaveEdit = (categoria) => {
+  const handleSaveEdit = (row) => {
     const monto = parseFloat(editValue) || 0;
-    if (monto <= 0) {
-      removeBudget(cycleMK, categoria);
+    // Clave: si tiene categoryId, borramos/editamos por ID; si no, por string legacy.
+    if (row.categoryId) {
+      if (monto <= 0) removeBudget(cycleMK, row.categoryId, { categoryId: true });
+      else addOrUpdateBudget(cycleMK, row.categoryId, monto, { categoryId: true });
     } else {
-      addOrUpdateBudget(cycleMK, categoria, monto);
+      // Fila legacy (sin ID resuelto) — seguimos por string
+      if (monto <= 0) removeBudget(cycleMK, row._key);
+      else addOrUpdateBudget(cycleMK, row._key, monto);
     }
-    setEditingCat(null);
+    setEditingKey(null);
     setEditValue("");
   };
 
-  // Añadir nueva categoría al presupuesto
   const handleAddNew = () => {
-    if (!newCat || !newAmount) return;
-    const ok = addOrUpdateBudget(cycleMK, newCat, parseFloat(newAmount) || 0);
+    if (!newCatId || !newAmount) return;
+    const ok = addOrUpdateBudget(cycleMK, newCatId, parseFloat(newAmount) || 0, { categoryId: true });
     if (ok) {
       setShowAdd(false);
-      setNewCat("");
+      setNewCatId("");
       setNewAmount("");
     }
   };
 
-  // Copiar presupuesto del ciclo anterior
   const handleCopyPrev = () => {
     const prev = getPrevCycle?.(cycleMK);
     if (prev) copyBudgetsFromPrevCycle(cycleMK, prev);
   };
 
-  // Color según estado del presupuesto de una categoría
   const stateColor = (estado) => {
     if (estado === "excedido") return "var(--danger)";
     if (estado === "alerta") return "var(--warning)";
@@ -83,18 +82,15 @@ export default function BudgetPanel({
     return "var(--success)";
   };
 
-  // Si no hay presupuesto definido todavía
   const sinPresupuesto = categorias.filter((c) => c.presupuestado > 0).length === 0;
 
   return (
     <div style={{
       background: "var(--bg-subtle)",
       borderRadius: "var(--radius-md)",
-      padding: 14,
-      marginBottom: 10,
+      padding: 14, marginBottom: 10,
       border: "1px solid var(--border-subtle)",
     }}>
-      {/* Cabecera */}
       <div style={{
         display: "flex", justifyContent: "space-between", alignItems: "flex-start",
         marginBottom: 14, gap: 10,
@@ -109,7 +105,6 @@ export default function BudgetPanel({
         </div>
       </div>
 
-      {/* Resumen global (solo si hay presupuesto) */}
       {!sinPresupuesto && (
         <div style={{
           background: "var(--bg-surface)",
@@ -135,7 +130,6 @@ export default function BudgetPanel({
               de {fmt(totalPresupuestado)}
             </div>
           </div>
-          {/* Barra global */}
           <div className="progress" style={{ height: 6 }}>
             <div
               className="progress__fill"
@@ -152,14 +146,11 @@ export default function BudgetPanel({
             color: totalRestante >= 0 ? "var(--success)" : "var(--danger)",
             fontWeight: 600,
           }}>
-            {totalRestante >= 0
-              ? `Te quedan ${fmt(totalRestante)}`
-              : `Excedido en ${fmt(Math.abs(totalRestante))}`}
+            {totalRestante >= 0 ? `Te quedan ${fmt(totalRestante)}` : `Excedido en ${fmt(Math.abs(totalRestante))}`}
           </div>
         </div>
       )}
 
-      {/* Lista de categorías */}
       {sinPresupuesto && categorias.length === 0 ? (
         <div style={{
           padding: 20, textAlign: "center",
@@ -179,17 +170,16 @@ export default function BudgetPanel({
             const emoji = c.categoria.split(" ")[0] || "📦";
             const nombre = c.categoria.replace(/^[^\s]+\s/, "") || c.categoria;
             const color = stateColor(c.estado);
-            const isEditing = editingCat === c.categoria;
+            const isEditing = editingKey === c._key;
             const pct = c.presupuestado > 0 ? (c.gastado / c.presupuestado) * 100 : 0;
 
             return (
-              <div key={c.categoria} style={{
+              <div key={c._key || c.categoria} style={{
                 background: "var(--bg-surface)",
                 borderRadius: "var(--radius-sm)",
                 padding: 10,
                 border: `1px solid ${c.estado === "excedido" ? "var(--danger)" : "var(--border-subtle)"}`,
               }}>
-                {/* Fila superior: emoji + nombre + monto */}
                 <div style={{
                   display: "flex", justifyContent: "space-between",
                   alignItems: "center", marginBottom: 6, gap: 8,
@@ -212,18 +202,18 @@ export default function BudgetPanel({
                         autoFocus
                         style={{ width: 80, padding: "6px 8px", fontSize: 13, marginBottom: 0 }}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter") handleSaveEdit(c.categoria);
-                          if (e.key === "Escape") { setEditingCat(null); setEditValue(""); }
+                          if (e.key === "Enter") handleSaveEdit(c);
+                          if (e.key === "Escape") { setEditingKey(null); setEditValue(""); }
                         }}
                       />
                       <button
                         className="edit-icon edit-icon--save"
-                        onClick={() => handleSaveEdit(c.categoria)}
+                        onClick={() => handleSaveEdit(c)}
                         title="Guardar"
                       >✓</button>
                       <button
                         className="edit-icon edit-icon--cancel"
-                        onClick={() => { setEditingCat(null); setEditValue(""); }}
+                        onClick={() => { setEditingKey(null); setEditValue(""); }}
                         title="Cancelar"
                       >✕</button>
                     </div>
@@ -241,18 +231,18 @@ export default function BudgetPanel({
                         <button
                           className="edit-icon"
                           onClick={() => {
-                            setEditingCat(c.categoria);
+                            setEditingKey(c._key);
                             setEditValue(String(c.presupuestado));
                           }}
                           title="Editar presupuesto"
                           style={{ marginLeft: 4 }}
                         >✏️</button>
                       )}
-                      {c.presupuestado === 0 && c.estado === "sin_presupuesto" && (
+                      {c.presupuestado === 0 && c.estado === "sin_presupuesto" && c._key !== "__sin__" && (
                         <button
                           className="edit-icon"
                           onClick={() => {
-                            setEditingCat(c.categoria);
+                            setEditingKey(c._key);
                             setEditValue("");
                           }}
                           title="Añadir presupuesto"
@@ -263,7 +253,6 @@ export default function BudgetPanel({
                   )}
                 </div>
 
-                {/* Barra de progreso */}
                 {c.presupuestado > 0 && (
                   <>
                     <div className="progress" style={{ height: 5 }}>
@@ -281,21 +270,18 @@ export default function BudgetPanel({
                     }}>
                       <span>{pct.toFixed(0)}%</span>
                       <span>
-                        {c.restante >= 0
-                          ? `Quedan ${fmt(c.restante)}`
-                          : `Excedido ${fmt(Math.abs(c.restante))}`}
+                        {c.restante >= 0 ? `Quedan ${fmt(c.restante)}` : `Excedido ${fmt(Math.abs(c.restante))}`}
                       </span>
                     </div>
                   </>
                 )}
 
-                {/* Si hay gasto pero no presupuesto */}
                 {c.estado === "sin_presupuesto" && (
                   <div style={{
                     fontSize: 11, color: "var(--text-tertiary)",
                     fontStyle: "italic",
                   }}>
-                    Sin presupuesto asignado
+                    {c._key === "__sin__" ? "Gastos sin categoría asignada" : "Sin presupuesto asignado"}
                   </div>
                 )}
               </div>
@@ -304,7 +290,6 @@ export default function BudgetPanel({
         </div>
       )}
 
-      {/* Añadir nueva categoría al presupuesto */}
       {showAdd ? (
         <div style={{
           marginTop: 12, padding: 12,
@@ -317,11 +302,13 @@ export default function BudgetPanel({
           </div>
           <select
             className="sheet-input"
-            value={newCat}
-            onChange={(e) => setNewCat(e.target.value)}
+            value={newCatId}
+            onChange={(e) => setNewCatId(e.target.value)}
           >
             <option value="">— Categoría —</option>
-            {disponibles.map((c) => <option key={c} value={c}>{c}</option>)}
+            {disponibles.map((c) => (
+              <option key={c.id} value={c.id}>{c.label}</option>
+            ))}
           </select>
           <input
             className="sheet-input"
@@ -335,13 +322,13 @@ export default function BudgetPanel({
               className="btn-primary btn-primary--accent"
               onClick={handleAddNew}
               style={{ flex: 1 }}
-              disabled={!newCat || !newAmount}
+              disabled={!newCatId || !newAmount}
             >
               Guardar
             </button>
             <button
               className="btn-secondary"
-              onClick={() => { setShowAdd(false); setNewCat(""); setNewAmount(""); }}
+              onClick={() => { setShowAdd(false); setNewCatId(""); setNewAmount(""); }}
             >
               Cancelar
             </button>
