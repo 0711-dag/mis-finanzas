@@ -3,7 +3,7 @@
 // Carga, guarda y gestiona todo el CRUD
 // + Auto-generación de pagos recurrentes
 // + Presupuesto, metas de ahorro, pagos extra a deudas
-// + Categorías v2 (tabla unificada default + custom con id estable)
+// + Categorías personalizadas (custom)
 // ══════════════════════════════════════════════
 import { useState, useEffect, useCallback, useRef } from "react";
 import { db, ref, onValue } from "../firebase.js";
@@ -23,17 +23,11 @@ import {
   validateSavingsGoal,
   validateSavingsDeposit,
   validateDebtExtraPayment,
-  validateCategory,
+  validateCustomCategory,
   LIMITS,
-  SCHEMA_VERSION,
 } from "../validation.js";
 import { genId, monthKey, addMonths } from "../utils/format.js";
 import { dateToFinancialMonth, getRecurringPaymentDate } from "../utils/cycle.js";
-import {
-  buildDefaultCategories,
-  buildCategoryLabel,
-  DEFAULT_IDS,
-} from "../utils/categoryDefaults.js";
 
 const emptyData = () => ({
   debts: [],
@@ -45,11 +39,12 @@ const emptyData = () => ({
   savingsGoals: [],
   savingsDeposits: [],
   debtPayments: [],
-  customCategories: [], // legacy (back-up tras migración)
-  categories: buildDefaultCategories(), // 🆕 v2
-  schemaVersion: SCHEMA_VERSION,
+  customCategories: [], // 🆕 categorías personalizadas del usuario
 });
 
+/**
+ * Genera pagos automáticos para gastos fijos recurrentes en un ciclo dado.
+ */
 function generateRecurringPayments(fixedExpenses, existingPayments, cycleMK) {
   const recurrentes = (fixedExpenses || []).filter((f) => f.recurrente);
   const newPayments = [];
@@ -91,16 +86,14 @@ export default function useFinancialData(user) {
   const dbPath = user ? `users/${user.uid}/family-finance` : null;
   const { debouncedSave, isSavingRef } = useDebouncedSave(dbPath, user, setSyncing, setLastSyncTime);
 
+  // Auto-clear validation errors
   useEffect(() => {
     if (!validationError) return;
     const t = setTimeout(() => setValidationError(""), 4000);
     return () => clearTimeout(t);
   }, [validationError]);
 
-  // 🛡️ Flag para disparar el save de migración UNA sola vez por sesión.
-  // Evita que un eco del onValue relance la escritura.
-  const migrationSavedRef = useRef(false);
-
+  // Escuchar cambios en Firebase (con migración automática)
   useEffect(() => {
     if (!dbPath) return;
     setLoading(true);
@@ -111,21 +104,7 @@ export default function useFinancialData(user) {
         if (isEditingRef.current || isSavingRef.current) return;
         const val = snapshot.val();
         if (val) {
-          const migrated = migrateData(val);
-          setData(migrated);
-
-          // 🛡️ Si los datos en Firebase estaban en v1 (sin schemaVersion
-          // o < 2), la migración los ha convertido a v2 en memoria. Los
-          // persistimos inmediatamente para que el estado en Firebase
-          // quede coherente y los siguientes arranques sean idempotentes.
-          // Solo lo hacemos una vez por sesión (migrationSavedRef).
-          const rawVersion = Number(val.schemaVersion) || 1;
-          if (rawVersion < 2 && !migrationSavedRef.current) {
-            migrationSavedRef.current = true;
-            // Usamos el save (debounced) normal. El propio debouncedSave
-            // activa isSavingRef y descarta los ecos de onValue.
-            debouncedSave(migrated);
-          }
+          setData(migrateData(val));
         } else {
           setData(emptyData());
         }
@@ -147,8 +126,9 @@ export default function useFinancialData(user) {
       }
     );
     return () => unsubscribe();
-  }, [dbPath, debouncedSave]);
+  }, [dbPath]);
 
+  // Guardar (local + Firebase)
   const save = useCallback(
     (d) => {
       setData(d);
@@ -163,18 +143,23 @@ export default function useFinancialData(user) {
   const ensureRecurringPayments = useCallback(
     (currentData, cycleMK) => {
       if (!currentData) return currentData;
+
       const newPayments = generateRecurringPayments(
         currentData.fixedExpenses,
         currentData.payments || [],
         cycleMK
       );
+
       if (newPayments.length === 0) return currentData;
+
       const totalPayments = (currentData.payments || []).length + newPayments.length;
       if (totalPayments > LIMITS.MAX_PAYMENTS) return currentData;
+
       const updatedData = {
         ...currentData,
         payments: [...(currentData.payments || []), ...newPayments],
       };
+
       save(updatedData);
       return updatedData;
     },
@@ -220,7 +205,7 @@ export default function useFinancialData(user) {
         cleanVal = (field === "totalCuotas" || field === "cuotaActual")
           ? sanitizeInteger(val)
           : sanitizeAmount(val);
-      } else if (typeof val === "string" && !["dayPago", "fecha", "fechaInicio", "month", "estado", "tipo", "titular", "categoryId"].includes(field)) {
+      } else if (typeof val === "string" && !["dayPago", "fecha", "fechaInicio", "month", "estado", "tipo", "titular"].includes(field)) {
         cleanVal = sanitizeText(val);
       }
 
@@ -243,6 +228,7 @@ export default function useFinancialData(user) {
     (section, id) => {
       if (!data) return;
       let newData = { ...data, [section]: (data[section] || []).filter((r) => r.id !== id) };
+      // Cascada al borrar
       if (section === "debts") {
         newData = {
           ...newData,
@@ -283,6 +269,7 @@ export default function useFinancialData(user) {
         ),
       };
 
+      // Sync: gasto fijo recurrente → pagos pendientes
       if (section === "fixedExpenses") {
         const updatedExpense = updatedData.fixedExpenses.find((f) => f.id === id);
         if (updatedExpense) {
@@ -319,7 +306,7 @@ export default function useFinancialData(user) {
   );
 
   // ══════════════════════════════════════════════
-  // DEUDAS
+  // DEUDAS (con plan de pagos)
   // ══════════════════════════════════════════════
 
   const addDebtWithPlan = useCallback(
@@ -339,6 +326,7 @@ export default function useFinancialData(user) {
       const newDebt = { ...cleanDebt, id: debtId };
       let newPayments = [...(data.payments || [])];
 
+      // Solo generamos plan de cuotas si es "cuotas" o "prestamo" con totalCuotas > 0
       const generaPlan =
         (cleanDebt.tipo === "cuotas" || cleanDebt.tipo === "prestamo") &&
         cleanDebt.totalCuotas > 0 &&
@@ -379,6 +367,7 @@ export default function useFinancialData(user) {
   // ══════════════════════════════════════════════
   // GASTOS FIJOS — Toggle recurrente
   // ══════════════════════════════════════════════
+
   const toggleRecurrente = useCallback(
     (fixedExpenseId) => {
       if (!data) return;
@@ -408,38 +397,25 @@ export default function useFinancialData(user) {
   );
 
   // ══════════════════════════════════════════════
-  // PRESUPUESTO POR CATEGORÍA
-  //
-  // 🆕 v2: aceptamos que la clave sea un categoryId. Si el input llega
-  // como string legacy "🏠 Vivienda", validateBudget lo acepta en
-  // `categoria`; el categoryId se puede pasar aparte en `categoryId`.
-  // La búsqueda de "ya existe" compara por categoryId si hay, si no por categoria.
+  // 🆕 PRESUPUESTO POR CATEGORÍA
   // ══════════════════════════════════════════════
 
+  /**
+   * Crea o actualiza el presupuesto de una categoría en un ciclo.
+   * Si ya existe para (ciclo, categoría), se sobrescribe.
+   */
   const addOrUpdateBudget = useCallback(
-    (cycleMK, categoriaOrId, monto, opts = {}) => {
+    (cycleMK, categoria, monto) => {
       if (!data) return false;
-      // Permitimos dos formas de invocar:
-      //  - addOrUpdateBudget(cycleMK, categoryId, monto, { categoryId: true })
-      //  - addOrUpdateBudget(cycleMK, "🏠 Vivienda", monto) — legacy string
-      const usingId = !!opts.categoryId;
-      const payload = usingId
-        ? { cycleMK, categoryId: categoriaOrId, categoria: "", monto }
-        : { cycleMK, categoryId: "", categoria: categoriaOrId, monto };
-
-      const validation = validateBudget(payload);
+      const validation = validateBudget({ cycleMK, categoria, monto });
       if (!validation.valid) {
         setValidationError(validation.errors.join(". "));
         return false;
       }
       const clean = validation.data;
-
-      const matches = (b) => {
-        if (b.cycleMK !== clean.cycleMK) return false;
-        if (clean.categoryId) return b.categoryId === clean.categoryId;
-        return b.categoria === clean.categoria;
-      };
-      const existing = (data.budgets || []).find(matches);
+      const existing = (data.budgets || []).find(
+        (b) => b.cycleMK === clean.cycleMK && b.categoria === clean.categoria
+      );
 
       let budgets;
       if (existing) {
@@ -462,21 +438,22 @@ export default function useFinancialData(user) {
   );
 
   const removeBudget = useCallback(
-    (cycleMK, keyOrCategoria, opts = {}) => {
+    (cycleMK, categoria) => {
       if (!data) return;
-      const usingId = !!opts.categoryId;
       save({
         ...data,
-        budgets: (data.budgets || []).filter((b) => {
-          if (b.cycleMK !== cycleMK) return true;
-          if (usingId) return b.categoryId !== keyOrCategoria;
-          return b.categoria !== keyOrCategoria;
-        }),
+        budgets: (data.budgets || []).filter(
+          (b) => !(b.cycleMK === cycleMK && b.categoria === categoria)
+        ),
       });
     },
     [data, save]
   );
 
+  /**
+   * Copia los presupuestos del ciclo anterior al ciclo actual.
+   * Útil al inicio de cada ciclo para no repetir trabajo.
+   */
   const copyBudgetsFromPrevCycle = useCallback(
     (targetCycleMK, sourceCycleMK) => {
       if (!data) return;
@@ -486,16 +463,15 @@ export default function useFinancialData(user) {
       const existingInTarget = new Set(
         (data.budgets || [])
           .filter((b) => b.cycleMK === targetCycleMK)
-          .map((b) => b.categoryId || b.categoria)
+          .map((b) => b.categoria)
       );
 
       const copied = source
-        .filter((b) => !existingInTarget.has(b.categoryId || b.categoria))
+        .filter((b) => !existingInTarget.has(b.categoria))
         .map((b) => ({
           id: genId(),
           cycleMK: targetCycleMK,
-          categoryId: b.categoryId || "",
-          categoria: b.categoria || "",
+          categoria: b.categoria,
           monto: b.monto,
         }));
 
@@ -506,8 +482,9 @@ export default function useFinancialData(user) {
   );
 
   // ══════════════════════════════════════════════
-  // METAS DE AHORRO
+  // 🆕 METAS DE AHORRO
   // ══════════════════════════════════════════════
+
   const addGoal = useCallback(
     (goal) => {
       if (!data) return false;
@@ -520,6 +497,7 @@ export default function useFinancialData(user) {
         setValidationError(validation.errors.join(". "));
         return false;
       }
+      // Solo puede existir una meta tipo "emergencia"
       if (validation.data.tipo === "emergencia") {
         const yaHay = (data.savingsGoals || []).some((g) => g.tipo === "emergencia");
         if (yaHay) {
@@ -571,6 +549,10 @@ export default function useFinancialData(user) {
     [data, save]
   );
 
+  /**
+   * Añade un aporte a una meta. El aporte queda vinculado al ciclo
+   * en que cae la fecha.
+   */
   const addDeposit = useCallback(
     (goalId, monto, fecha, nota = "") => {
       if (!data) return false;
@@ -616,8 +598,9 @@ export default function useFinancialData(user) {
   );
 
   // ══════════════════════════════════════════════
-  // PAGOS EXTRA A DEUDAS
+  // 🆕 PAGOS EXTRA A DEUDAS (fuera del plan)
   // ══════════════════════════════════════════════
+
   const addDebtExtraPayment = useCallback(
     (debtId, monto, fecha, nota = "") => {
       if (!data) return false;
@@ -639,7 +622,10 @@ export default function useFinancialData(user) {
         return false;
       }
       const clean = validation.data;
+
+      // Reducir saldo pendiente de la deuda
       const nuevoSaldo = Math.max(0, (Number(debt.saldoPendiente) || 0) - clean.monto);
+
       save({
         ...data,
         debtPayments: [...(data.debtPayments || []), { ...clean, id: genId() }],
@@ -658,6 +644,8 @@ export default function useFinancialData(user) {
       if (!data) return;
       const payment = (data.debtPayments || []).find((p) => p.id === paymentId);
       if (!payment) return;
+
+      // Revertir el saldo (sumar de vuelta)
       const debt = (data.debts || []).find((d) => d.id === payment.debtId);
       const nuevosDebts = debt
         ? data.debts.map((d) =>
@@ -666,6 +654,7 @@ export default function useFinancialData(user) {
               : d
           )
         : data.debts;
+
       save({
         ...data,
         debts: nuevosDebts,
@@ -676,35 +665,34 @@ export default function useFinancialData(user) {
   );
 
   // ══════════════════════════════════════════════
-  // 🆕 CATEGORÍAS v2 (tabla unificada en data.categories)
+  // 🆕 CATEGORÍAS PERSONALIZADAS (custom)
   // ══════════════════════════════════════════════
 
   /**
-   * Añade una categoría custom nueva.
-   * Siempre se crea con kind:"custom". El duplicado se comprueba por label
-   * (emoji+nombre) contra TODAS las categorías (default y custom).
+   * Añade una categoría custom.
+   * Si ya existe una con el mismo label (emoji + nombre) para ese tipo,
+   * devuelve false con aviso — no duplicamos.
    */
   const addCategory = useCallback(
     (cat) => {
       if (!data) return false;
-
-      const categories = data.categories || [];
-      const numCustom = categories.filter((c) => c.kind === "custom").length;
-      if (numCustom >= LIMITS.MAX_CUSTOM_CATEGORIES) {
+      if (!canAddMore("customCategories", data)) {
         setValidationError(`Máximo ${LIMITS.MAX_CUSTOM_CATEGORIES} categorías personalizadas`);
         return false;
       }
-
-      const validation = validateCategory({ ...cat, kind: "custom" });
+      const validation = validateCustomCategory(cat);
       if (!validation.valid) {
         setValidationError(validation.errors.join(". "));
         return false;
       }
       const clean = validation.data;
       const emoji = clean.emoji || "📦";
-      const newLabel = buildCategoryLabel({ nombre: clean.nombre, emoji });
+      const newLabel = `${emoji} ${clean.nombre}`;
 
-      const duplicado = categories.some((c) => buildCategoryLabel(c) === newLabel);
+      // Evitar duplicados por label dentro del mismo tipo
+      const duplicado = (data.customCategories || []).some(
+        (c) => c.tipo === clean.tipo && `${c.emoji || "📦"} ${c.nombre}` === newLabel
+      );
       if (duplicado) {
         setValidationError("Ya existe una categoría con ese nombre");
         return false;
@@ -712,14 +700,13 @@ export default function useFinancialData(user) {
 
       save({
         ...data,
-        categories: [
-          ...categories,
+        customCategories: [
+          ...(data.customCategories || []),
           {
             id: genId(),
-            kind: "custom",
+            tipo: clean.tipo,
             nombre: clean.nombre,
             emoji,
-            tipoGasto: clean.tipoGasto || "",
             createdAt: Date.now(),
           },
         ],
@@ -731,53 +718,33 @@ export default function useFinancialData(user) {
   );
 
   /**
-   * Edita una categoría (default o custom). El id no cambia nunca, así que
-   * los gastos que la referencian por categoryId siguen funcionando.
-   * Campos editables: nombre, emoji, tipoGasto.
+   * Edita una categoría custom existente (nombre y/o emoji).
+   * No permite cambiar el tipo (fixed/variable) para no romper datos.
    */
   const updateCategory = useCallback(
     (id, fields) => {
       if (!data) return false;
-      const categories = data.categories || [];
-      const existing = categories.find((c) => c.id === id);
-      if (!existing) {
-        setValidationError("Categoría no encontrada");
-        return false;
-      }
+      const existing = (data.customCategories || []).find((c) => c.id === id);
+      if (!existing) return false;
 
+      // Fusionamos conservando el tipo original
       const merged = {
-        kind: existing.kind,
+        tipo: existing.tipo,
         nombre: fields.nombre !== undefined ? fields.nombre : existing.nombre,
         emoji: fields.emoji !== undefined ? fields.emoji : existing.emoji,
-        tipoGasto: fields.tipoGasto !== undefined ? fields.tipoGasto : (existing.tipoGasto || ""),
       };
-      const validation = validateCategory(merged);
+      const validation = validateCustomCategory(merged);
       if (!validation.valid) {
         setValidationError(validation.errors.join(". "));
         return false;
       }
       const clean = validation.data;
-      const newLabel = buildCategoryLabel({ nombre: clean.nombre, emoji: clean.emoji || "📦" });
-
-      // Duplicado: mismo label en OTRA categoría distinta
-      const duplicado = categories.some(
-        (c) => c.id !== id && buildCategoryLabel(c) === newLabel
-      );
-      if (duplicado) {
-        setValidationError("Ya existe una categoría con ese nombre");
-        return false;
-      }
 
       save({
         ...data,
-        categories: categories.map((c) =>
+        customCategories: data.customCategories.map((c) =>
           c.id === id
-            ? {
-                ...c,
-                nombre: clean.nombre,
-                emoji: clean.emoji || "📦",
-                tipoGasto: clean.tipoGasto || "",
-              }
+            ? { ...c, nombre: clean.nombre, emoji: clean.emoji || "📦" }
             : c
         ),
       });
@@ -788,22 +755,64 @@ export default function useFinancialData(user) {
   );
 
   /**
-   * Elimina una categoría custom.
-   * Las defaults (kind:default) no se pueden borrar.
-   * Si se pasa `reassignToId`, reasigna los gastos/budgets que la usaban
-   * a esa nueva categoría. Si no, los deja con categoryId="" (sin categoría).
+   * Elimina una categoría custom. No toca los gastos que la tuvieran
+   * asignada (seguirán mostrando el string de categoría tal cual).
    */
   const deleteCategory = useCallback(
-    (id, reassignToId = "") => {
+    (id) => {
       if (!data) return;
-      if (DEFAULT_IDS.has(id)) {
-        setValidationError("Las categorías por defecto no se pueden eliminar");
-        return;
-      }
-
-      const reassignFn = (item) => {
-        if (item.categoryId !== id) return item;
-        return { ...item, categoryId: reassignToId || "" };
-      };
-
       save({
+        ...data,
+        customCategories: (data.customCategories || []).filter((c) => c.id !== id),
+      });
+    },
+    [data, save]
+  );
+
+  // ══════════════════════════════════════════════
+  // RESET
+  // ══════════════════════════════════════════════
+  const resetAll = useCallback(() => {
+    save(emptyData());
+  }, [save]);
+
+  return {
+    // Estado
+    data,
+    loading,
+    syncing,
+    online,
+    lastSyncTime,
+    validationError,
+    setValidationError,
+    isEditingRef,
+    // Generales
+    save,
+    addRow,
+    updField,
+    deleteRow,
+    saveRowEdit,
+    resetAll,
+    // Gastos fijos
+    toggleRecurrente,
+    ensureRecurringPayments,
+    // Deudas
+    addDebtWithPlan,
+    addDebtExtraPayment,
+    deleteDebtExtraPayment,
+    // Presupuesto
+    addOrUpdateBudget,
+    removeBudget,
+    copyBudgetsFromPrevCycle,
+    // Metas de ahorro
+    addGoal,
+    updateGoal,
+    deleteGoal,
+    addDeposit,
+    deleteDeposit,
+    // 🆕 Categorías personalizadas
+    addCategory,
+    updateCategory,
+    deleteCategory,
+  };
+}
