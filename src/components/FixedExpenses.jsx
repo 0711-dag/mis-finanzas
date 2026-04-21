@@ -1,9 +1,15 @@
+// ══════════════════════════════════════════════
+// 🏠 Gastos fijos
+// v2: la categoría se guarda como `categoryId` (referencia al ID estable
+// en data.categories). El label visible se resuelve al vuelo.
+// ══════════════════════════════════════════════
 import { useState } from "react";
 import Section from "./Section.jsx";
 import ActionButtons from "./shared/ActionButtons.jsx";
 import CategoryManager from "./CategoryManager.jsx";
 import useCategories from "../hooks/useCategories.js";
 import { fmt } from "../utils/format.js";
+import { findCategoryById, buildCategoryLabel } from "../utils/categoryDefaults.js";
 
 export default function FixedExpenses({
   data,
@@ -14,7 +20,6 @@ export default function FixedExpenses({
   setAddingTo,
   addingTo,
   mobileMode,
-  // CRUD de categorías custom (opcional: si no llega, se oculta el botón de gestión)
   addCategory,
   updateCategory,
   deleteCategory,
@@ -27,20 +32,27 @@ export default function FixedExpenses({
   const total = expenses.reduce((s, f) => s + (f.monto || 0), 0);
   const totalRecurrente = expenses.filter((f) => f.recurrente).reduce((s, f) => s + (f.monto || 0), 0);
 
-  // Lista unificada de categorías (defaults + custom del usuario)
-  const { categories } = useCategories("fixed", data.customCategories);
+  // 🆕 v2: items = [{id, label, emoji, nombre, kind, tipoGasto}]
+  const { items, findById } = useCategories("fixed", data.categories, data.customCategories);
 
-  // Indica si están disponibles las funciones de gestión (para enseñar el botón)
   const canManageCategories = typeof addCategory === "function";
 
-  // Gastos fijos sin clasificar (para el aviso al usuario)
-  const sinClasificar = expenses.filter((f) => !f.categoria).length;
+  // Un gasto está "sin clasificar" si no tiene categoryId ni string categoria.
+  const sinClasificar = expenses.filter((f) => !f.categoryId && !f.categoria).length;
 
   const startRowEdit = (_s, item) => setEditingRow({ id: item.id, fields: { ...item } });
   const cancelRowEdit = () => setEditingRow(null);
   const handleSaveRowEdit = () => {
     if (!editingRow) return;
-    saveRowEdit("fixedExpenses", editingRow.id, editingRow.fields);
+    // Al guardar la edición, también actualizamos el string `categoria`
+    // (back-up) desde la categoría actual, por si la lee algún componente
+    // legacy que aún no lea categoryId.
+    const catObj = findById(editingRow.fields.categoryId);
+    const fields = {
+      ...editingRow.fields,
+      categoria: catObj ? buildCategoryLabel(catObj) : (editingRow.fields.categoria || ""),
+    };
+    saveRowEdit("fixedExpenses", editingRow.id, fields);
     setEditingRow(null);
   };
   const isRowEditing = (id) => editingRow?.id === id;
@@ -50,21 +62,23 @@ export default function FixedExpenses({
 
   const handleAdd = () => {
     setAddingTo("fixedExpenses");
-    setNewRow({ concepto: "", diaPago: "", monto: "", recurrente: true, categoria: "" });
+    setNewRow({ concepto: "", diaPago: "", monto: "", recurrente: true, categoryId: "" });
   };
 
   const handleSaveNew = () => {
+    const catObj = findById(newRow.categoryId);
     const success = addRow("fixedExpenses", {
       concepto: newRow.concepto,
       diaPago: newRow.diaPago,
       monto: parseFloat(newRow.monto) || 0,
       recurrente: !!newRow.recurrente,
-      categoria: newRow.categoria || "",
+      categoryId: newRow.categoryId || "",
+      categoria: catObj ? buildCategoryLabel(catObj) : "", // back-up string
     });
     if (success) setAddingTo(null);
   };
 
-  // Fila del selector de categoría + botón de gestión
+  // Selector de categoría por ID
   const CategorySelector = ({ value, onChange }) => (
     <div style={{ display: "flex", gap: 6 }}>
       <select
@@ -74,7 +88,9 @@ export default function FixedExpenses({
         style={{ flex: 1 }}
       >
         <option value="">— Categoría —</option>
-        {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+        {items.map((c) => (
+          <option key={c.id} value={c.id}>{c.label}</option>
+        ))}
       </select>
       {canManageCategories && (
         <button
@@ -114,8 +130,8 @@ export default function FixedExpenses({
       </div>
 
       <CategorySelector
-        value={newRow.categoria}
-        onChange={(v) => setNewRow({ ...newRow, categoria: v })}
+        value={newRow.categoryId}
+        onChange={(v) => setNewRow({ ...newRow, categoryId: v })}
       />
 
       <label style={{
@@ -138,9 +154,21 @@ export default function FixedExpenses({
     </div>
   );
 
+  // Helper: label y emoji actuales de un gasto, frescos desde la tabla.
+  const getDisplayCat = (f) => {
+    const cat = findById(f.categoryId);
+    if (cat) return { emoji: cat.emoji || "📦", text: cat.nombre };
+    // Fallback: usar el string categoria si no se resuelve (datos legacy)
+    if (f.categoria) {
+      const emoji = f.categoria.split(" ")[0];
+      const text = f.categoria.replace(/^[^\s]+\s/, "");
+      return { emoji, text };
+    }
+    return { emoji: null, text: null };
+  };
+
   return (
     <Section title="Gastos fijos" icon="🏠" onAdd={handleAdd} mobileMode={mobileMode}>
-      {/* Aviso de gastos sin categoría */}
       {sinClasificar > 0 && (
         <div style={{
           padding: "8px 12px", marginBottom: 10,
@@ -172,9 +200,7 @@ export default function FixedExpenses({
           const re = isRowEditing(f.id);
           const isRec = !!f.recurrente;
           const dayValid = !isNaN(parseInt(f.diaPago)) && parseInt(f.diaPago) >= 1 && parseInt(f.diaPago) <= 31;
-          // Emoji de la categoría (primer caracter) si existe
-          const catEmoji = f.categoria ? f.categoria.split(" ")[0] : null;
-          const catText = f.categoria ? f.categoria.replace(/^[^\s]+\s/, "") : null;
+          const { emoji: catEmoji, text: catText } = getDisplayCat(f);
 
           if (re) {
             return (
@@ -208,8 +234,8 @@ export default function FixedExpenses({
                 </div>
 
                 <CategorySelector
-                  value={rowField("categoria")}
-                  onChange={(v) => setRowField("categoria", v)}
+                  value={rowField("categoryId")}
+                  onChange={(v) => setRowField("categoryId", v)}
                 />
 
                 <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-secondary)" }}>
@@ -245,7 +271,7 @@ export default function FixedExpenses({
                 <div className="item__subtitle">
                   Día {f.diaPago}
                   {catText && <span style={{ marginLeft: 6 }}>· {catText}</span>}
-                  {!f.categoria && <span style={{ color: "var(--warning)", marginLeft: 6 }}>· Sin categoría</span>}
+                  {!f.categoryId && !f.categoria && <span style={{ color: "var(--warning)", marginLeft: 6 }}>· Sin categoría</span>}
                   {isRec && !dayValid && <span style={{ color: "var(--danger)", marginLeft: 6 }}>⚠️ Ajusta día (1-31)</span>}
                   {isRec && dayValid && <span style={{ color: "var(--category-recurring)", marginLeft: 6 }}>· Auto</span>}
                 </div>
@@ -299,8 +325,7 @@ export default function FixedExpenses({
       {/* Modal de gestión de categorías */}
       {showCategoryManager && canManageCategories && (
         <CategoryManager
-          tipo="fixed"
-          customCategories={data.customCategories}
+          data={data}
           onAdd={addCategory}
           onUpdate={updateCategory}
           onDelete={deleteCategory}
