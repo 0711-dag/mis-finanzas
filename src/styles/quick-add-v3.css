@@ -1,44 +1,87 @@
 /* ══════════════════════════════════════════════
-   📱 Quick-Add Sheet v3 — Entrega 1/3
-   ──────────────────────────────────────────────
-   Solo AÑADE reglas nuevas. No modifica ni pisa
-   ninguna regla existente de global.css.
-   Importado una única vez desde main.jsx.
+   📱 QuickAddSheet v2.1 — overrides específicos
+   Este archivo sobreescribe/añade estilos al sheet de gasto rápido
+   para solucionar el problema del teclado que tapa el contenido.
    ══════════════════════════════════════════════ */
 
-/* Variante compacta del grupo de chips de categoría:
-   usada cuando los chips están JUSTO DEBAJO del importe
-   (más pegados al resto del formulario). */
-.cat-chips--compact {
+/* Sheet con layout flex column → body scrolleable + footer sticky
+   Se aplica sólo cuando el sheet es de quick-add (no afecta a otros sheets). */
+.sheet.sheet--quickadd {
+  /* Transición suave al aparecer/desaparecer el teclado */
+  transition:
+    bottom 0.18s cubic-bezier(0.32, 0.72, 0, 1),
+    max-height 0.18s cubic-bezier(0.32, 0.72, 0, 1);
+  /* Cambiamos a flex column para separar body scrolleable y footer fijo */
+  display: flex;
+  flex-direction: column;
+  /* El padding-bottom original se aplica sobre el footer, no sobre el cuerpo */
+  padding: 18px 0 0;
+  overflow: hidden;
+}
+
+/* El handle mantiene centrado arriba */
+.sheet.sheet--quickadd .sheet__handle {
+  margin: 0 auto 10px;
+  flex-shrink: 0;
+}
+
+/* Cuerpo scrolleable: aquí va todo menos el botón principal */
+.sheet.sheet--quickadd .sheet__body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 18px 8px;
+  -webkit-overflow-scrolling: touch;
+  /* Evitar que el último chip quede pegado al footer */
+  min-height: 0;
+}
+
+/* Footer sticky: siempre visible. Contiene el botón Guardar. */
+.sheet.sheet--quickadd .sheet__footer {
+  flex-shrink: 0;
+  padding: 12px 18px calc(14px + env(safe-area-inset-bottom, 0px));
+  background: var(--bg-elevated);
+  /* Separador visual sutil entre body y footer */
+  border-top: 1px solid var(--border-subtle);
+  /* Sombra suave ascendente para reforzar la jerarquía */
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="dark"] .sheet.sheet--quickadd .sheet__footer {
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* El botón primary dentro del footer no necesita margin extra */
+.sheet.sheet--quickadd .sheet__footer .btn-primary {
+  margin: 0;
+}
+
+/* Reducir ligeramente la separación de algunos elementos para ganar espacio
+   vertical cuando el sheet está comprimido por el teclado. */
+.sheet.sheet--quickadd .sheet__title {
   margin-bottom: 12px;
-  transition: margin var(--anim-fast);
 }
 
-/* Estado de error: highlight rojo alrededor del grupo
-   cuando el usuario intenta guardar sin elegir categoría.
-   Usamos outline (no border) para no afectar el layout. */
-.cat-chips--error {
-  border-radius: var(--radius-md);
-  outline: 1.5px solid var(--danger);
-  outline-offset: 4px;
+.sheet.sheet--quickadd .amount-input-wrap {
+  margin-bottom: 12px;
 }
 
-/* Chip "+ Más (N)" / "− Menos" — aspecto discreto con
-   borde punteado para diferenciarlo de las categorías reales. */
-.cat-chip--more {
-  color: var(--text-tertiary);
-  border-style: dashed;
-  border-color: var(--border-default);
-  background: transparent;
-  /* Reutiliza layout, padding y tipografía de .cat-chip */
+.sheet.sheet--quickadd .sheet-input {
+  margin-bottom: 10px;
 }
 
-.cat-chip--more:active {
-  background: var(--bg-subtle);
-  transform: scale(0.94);
+.sheet.sheet--quickadd .cat-chips {
+  margin-bottom: 4px;
 }
 
-/* Modo oscuro: borde un poco más suave para que no grite */
-[data-theme="dark"] .cat-chip--more {
-  border-color: var(--border-strong);
+/* En pantallas muy pequeñas (≤360px), compactamos aún más */
+@media (max-height: 640px) {
+  .sheet.sheet--quickadd .amount-input {
+    font-size: 28px;
+    padding: 12px 44px 12px 14px;
+  }
+  .sheet.sheet--quickadd .sheet__title {
+    font-size: 15px;
+    margin-bottom: 10px;
+  }
 }
