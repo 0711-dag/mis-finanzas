@@ -1,3 +1,6 @@
+// ══════════════════════════════════════════════
+// 📋 Informe mensual del ciclo
+// ══════════════════════════════════════════════
 import { fmt } from "../utils/format.js";
 import { formatMonthLabelWithCycle } from "../utils/cycle.js";
 import {
@@ -35,9 +38,6 @@ function ReportSection({ title, total, color, items, showStatus }) {
   );
 }
 
-// ══════════════════════════════════════════════
-// Sección nueva: Presupuesto vs. Real
-// ══════════════════════════════════════════════
 function BudgetReportSection({ usage }) {
   if (!usage.categorias.length && usage.totalPresupuestado === 0) return null;
 
@@ -59,7 +59,7 @@ function BudgetReportSection({ usage }) {
             : "var(--success)";
           const pct = c.presupuestado > 0 ? Math.min(100, (c.gastado / c.presupuestado) * 100) : 0;
           return (
-            <div key={i} style={{
+            <div key={c._key || c.categoria || i} style={{
               padding: "8px 10px",
               borderRadius: "var(--radius-sm)",
               background: "var(--bg-subtle)",
@@ -91,13 +91,9 @@ function BudgetReportSection({ usage }) {
   );
 }
 
-// ══════════════════════════════════════════════
-// Sección nueva: Metas de ahorro
-// ══════════════════════════════════════════════
 function SavingsReportSection({ goals, deposits, cycleMK }) {
   if (!goals || goals.length === 0) return null;
 
-  // Aportes de este ciclo por meta
   const aportesCiclo = (deposits || []).filter((d) => d.month === cycleMK);
   const totalAportado = aportesCiclo.reduce((s, d) => s + (Number(d.monto) || 0), 0);
 
@@ -170,9 +166,6 @@ function SavingsReportSection({ goals, deposits, cycleMK }) {
   );
 }
 
-// ══════════════════════════════════════════════
-// Sección nueva: Salud financiera
-// ══════════════════════════════════════════════
 function HealthSection({ metrics, ratio, ratioEval }) {
   const ahorroColor =
     metrics.tasaAhorro >= 20 ? "var(--success)"
@@ -231,7 +224,6 @@ export default function ReportModal({ data, filteredPayments, filteredIncomes, f
   const totalPayments = filteredPayments.reduce((s, p) => s + (p.monto || 0), 0);
   const totalIncomes = filteredIncomes.reduce((s, i) => s + (i.amount || 0), 0);
   const totalVarExpenses = filteredVarExpenses.reduce((s, v) => s + (v.monto || 0), 0);
-  const totalDebtPending = (data.debts || []).reduce((s, d) => s + (d.saldoPendiente || 0), 0);
   const reportBalance = totalIncomes - totalPayments - totalVarExpenses;
 
   const recurringPayments = filteredPayments.filter((p) => p.fixedExpenseId);
@@ -242,15 +234,19 @@ export default function ReportModal({ data, filteredPayments, filteredIncomes, f
   const totalDebtPayments = debtPayments.reduce((s, p) => s + (p.monto || 0), 0);
   const totalManual = manualPayments.reduce((s, p) => s + (p.monto || 0), 0);
 
-  // 🆕 Métricas y cálculos financieros
   const metrics = calcMonthlyMetrics(data, selectedMonth);
   const ratio = calcDebtRatio(metrics.cuotasDeuda, metrics.ingresos);
   const ratioEval = evalDebtRatio(ratio);
+
+  // 🆕 v2: pasamos data.categories como 4º argumento para que el informe
+  // muestre los nombres frescos (si el usuario renombró alguna).
   const budgetUsage = calcBudgetUsage(
     data.budgets || [],
     data.variableExpenses || [],
-    selectedMonth
+    selectedMonth,
+    data.categories || []
   );
+
   const savingsGoals = data.savingsGoals || [];
   const savingsDeposits = data.savingsDeposits || [];
 
@@ -268,7 +264,6 @@ export default function ReportModal({ data, filteredPayments, filteredIncomes, f
         </div>
 
         <div className="modal__body">
-          {/* Hero balance */}
           <div style={{
             textAlign: "center", padding: "10px 0 22px",
             borderBottom: "1px solid var(--border-subtle)",
@@ -290,7 +285,6 @@ export default function ReportModal({ data, filteredPayments, filteredIncomes, f
             </div>
           </div>
 
-          {/* 🆕 Salud financiera */}
           <HealthSection metrics={metrics} ratio={ratio} ratioEval={ratioEval} />
 
           <ReportSection
@@ -351,17 +345,14 @@ export default function ReportModal({ data, filteredPayments, filteredIncomes, f
             }))}
           />
 
-          {/* 🆕 Presupuesto vs. Real */}
           <BudgetReportSection usage={budgetUsage} />
 
-          {/* 🆕 Metas de ahorro */}
           <SavingsReportSection
             goals={savingsGoals}
             deposits={savingsDeposits}
             cycleMK={selectedMonth}
           />
 
-          {/* Resumen final */}
           <div style={{
             background: "var(--bg-subtle)", borderRadius: "var(--radius-md)",
             padding: 14, marginTop: 18,
@@ -389,27 +380,6 @@ export default function ReportModal({ data, filteredPayments, filteredIncomes, f
               }}>
                 {fmt(reportBalance)}
               </span>
-            </div>
-          </div>
-
-          {/* Deuda total */}
-          <div style={{
-            marginTop: 16, padding: 14,
-            background: "var(--category-debt-bg)",
-            borderRadius: "var(--radius-md)",
-          }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--category-debt)", textTransform: "uppercase", letterSpacing: 0.5 }}>
-              Deuda total pendiente
-            </div>
-            <div style={{
-              fontSize: 24, fontWeight: 800, color: "var(--category-debt)",
-              marginTop: 4, letterSpacing: "-0.02em",
-              fontFeatureSettings: "'tnum'",
-            }}>
-              {fmt(totalDebtPending)}
-            </div>
-            <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 6 }}>
-              {(data.debts || []).filter((d) => (d.cuotaActual || 0) >= (d.totalCuotas || 1)).length} de {(data.debts || []).length} deudas completadas
             </div>
           </div>
         </div>
