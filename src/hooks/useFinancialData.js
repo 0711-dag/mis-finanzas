@@ -97,6 +97,10 @@ export default function useFinancialData(user) {
     return () => clearTimeout(t);
   }, [validationError]);
 
+  // 🛡️ Flag para disparar el save de migración UNA sola vez por sesión.
+  // Evita que un eco del onValue relance la escritura.
+  const migrationSavedRef = useRef(false);
+
   useEffect(() => {
     if (!dbPath) return;
     setLoading(true);
@@ -107,7 +111,21 @@ export default function useFinancialData(user) {
         if (isEditingRef.current || isSavingRef.current) return;
         const val = snapshot.val();
         if (val) {
-          setData(migrateData(val));
+          const migrated = migrateData(val);
+          setData(migrated);
+
+          // 🛡️ Si los datos en Firebase estaban en v1 (sin schemaVersion
+          // o < 2), la migración los ha convertido a v2 en memoria. Los
+          // persistimos inmediatamente para que el estado en Firebase
+          // quede coherente y los siguientes arranques sean idempotentes.
+          // Solo lo hacemos una vez por sesión (migrationSavedRef).
+          const rawVersion = Number(val.schemaVersion) || 1;
+          if (rawVersion < 2 && !migrationSavedRef.current) {
+            migrationSavedRef.current = true;
+            // Usamos el save (debounced) normal. El propio debouncedSave
+            // activa isSavingRef y descarta los ecos de onValue.
+            debouncedSave(migrated);
+          }
         } else {
           setData(emptyData());
         }
@@ -129,7 +147,7 @@ export default function useFinancialData(user) {
       }
     );
     return () => unsubscribe();
-  }, [dbPath]);
+  }, [dbPath, debouncedSave]);
 
   const save = useCallback(
     (d) => {
@@ -789,21 +807,3 @@ export default function useFinancialData(user) {
       };
 
       save({
-        ...data,
-        categories: (data.categories || []).filter((c) => c.id !== id),
-        fixedExpenses: (data.fixedExpenses || []).map(reassignFn),
-        variableExpenses: (data.variableExpenses || []).map(reassignFn),
-        budgets: (data.budgets || []).map(reassignFn),
-      });
-    },
-    [data, save]
-  );
-
-  // ══════════════════════════════════════════════
-  // RESET
-  // ══════════════════════════════════════════════
-  const resetAll = useCallback(() => {
-    save(emptyData());
-  }, [save]);
-
-  return {
