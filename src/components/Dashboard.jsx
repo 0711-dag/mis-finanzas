@@ -4,13 +4,8 @@
 // - Escritorio: sidebar + grid denso
 // + Métricas financieras en 3 filas × 3 cards (MetricsCards)
 // + Panel de Metas de Ahorro
-// + Categorías personalizadas propagadas a FixedExpenses y VariableExpenses
-// + 🆕 Vista "Todas las categorías" con gasto del ciclo (CategoriesOverview)
-//
-// Nota: el "Balance del ciclo" vive únicamente en MetricsCards (card superior izquierda).
-// Se eliminaron el hero grande duplicado y las 3 stat-cards pequeñas
-// (Ingresos / Egresos totales / Pendiente), ahora integradas en MetricsCards.
-// Egresos y clasificación CF/CV/Discrecional vienen de calcExpenseBreakdown.
+// + Categorías v2 (tabla unificada data.categories con ID estable)
+// + Vista "Todas las categorías" con gasto del ciclo (CategoriesOverview)
 // ══════════════════════════════════════════════
 import { useState, useEffect } from "react";
 import { auth, signOut } from "../firebase.js";
@@ -41,13 +36,8 @@ import PaymentCalendar from "./PaymentCalendar.jsx";
 import ReportModal from "./ReportModal.jsx";
 import MetricsCards from "./MetricsCards.jsx";
 import SavingsGoals from "./SavingsGoals.jsx";
-// 🆕 Nuevo modal con el mini-informe de categorías del ciclo
 import CategoriesOverview from "./CategoriesOverview.jsx";
 
-/**
- * Dado un ciclo "YYYY-MM", devuelve el ciclo anterior "YYYY-MM".
- * Usado para copiar presupuestos del ciclo previo.
- */
 function getPrevCycle(cycleMK) {
   if (!cycleMK || !/^\d{4}-\d{2}$/.test(cycleMK)) return null;
   const [y, m] = cycleMK.split("-").map(Number);
@@ -61,11 +51,8 @@ export default function Dashboard({ user, theme, toggleTheme }) {
     data, loading, syncing, online, lastSyncTime, validationError,
     save, addRow, updField, deleteRow, saveRowEdit, addDebtWithPlan, resetAll,
     isEditingRef, toggleRecurrente, ensureRecurringPayments,
-    // Presupuesto
     addOrUpdateBudget, removeBudget, copyBudgetsFromPrevCycle,
-    // Metas de ahorro
     addGoal, updateGoal, deleteGoal, addDeposit, deleteDeposit,
-    // Categorías personalizadas
     addCategory, updateCategory, deleteCategory,
   } = useFinancialData(user);
 
@@ -77,8 +64,7 @@ export default function Dashboard({ user, theme, toggleTheme }) {
   const [showResetModal, setShowResetModal] = useState(false);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [addingTo, setAddingTo] = useState(null);
-  const [mobileTab, setMobileTab] = useState("home"); // home | payments | debts | more
-  // 🆕 Estado del modal de categorías del ciclo
+  const [mobileTab, setMobileTab] = useState("home");
   const [showCategories, setShowCategories] = useState(false);
 
   useEffect(() => { isEditingRef.current = !!addingTo; }, [addingTo, isEditingRef]);
@@ -129,21 +115,10 @@ export default function Dashboard({ user, theme, toggleTheme }) {
     return v.month === selectedMonth;
   });
 
-  // ══════════════════════════════════════════════
-  // Totales ligeros (solo lo que realmente se usa a este nivel)
-  //
-  // Ya no calculamos `totalPayments + totalVarExpenses` como proxy de
-  // egresos: el cálculo canónico vive en calcExpenseBreakdown y lo
-  // consume MetricsCards directamente.
-  //
-  // `totalPending` se mantiene aquí porque depende del estado PAGADO/PENDIENTE
-  // que no se computa dentro de finance.js.
-  // ══════════════════════════════════════════════
   const totalPending = filteredPayments
     .filter((p) => p.estado === "PENDIENTE")
     .reduce((s, p) => s + (p.monto || 0), 0);
 
-  // Meses disponibles
   const getAllFinancialMonths = () => {
     const months = new Set([selectedMonth]);
     (data.payments || []).forEach((p) => {
@@ -162,51 +137,27 @@ export default function Dashboard({ user, theme, toggleTheme }) {
   };
   const allMonths = getAllFinancialMonths();
 
-  // Props comunes para FixedExpenses (móvil y desktop)
   const fixedExpensesProps = {
     data,
-    addRow,
-    deleteRow,
-    saveRowEdit,
-    toggleRecurrente,
-    setAddingTo,
-    addingTo,
-    // Categorías custom
-    addCategory,
-    updateCategory,
-    deleteCategory,
+    addRow, deleteRow, saveRowEdit, toggleRecurrente,
+    setAddingTo, addingTo,
+    addCategory, updateCategory, deleteCategory,
   };
 
-  // Props comunes para VariableExpenses (móvil y desktop)
   const variableExpensesProps = {
     filteredVarExpenses,
-    addRow,
-    deleteRow,
-    saveRowEdit,
-    selectedMonth,
-    setAddingTo,
-    addingTo,
+    addRow, deleteRow, saveRowEdit,
+    selectedMonth, setAddingTo, addingTo,
     data,
-    addOrUpdateBudget,
-    removeBudget,
-    copyBudgetsFromPrevCycle,
-    getPrevCycle,
-    // Categorías custom
-    addCategory,
-    updateCategory,
-    deleteCategory,
+    addOrUpdateBudget, removeBudget,
+    copyBudgetsFromPrevCycle, getPrevCycle,
+    addCategory, updateCategory, deleteCategory,
   };
 
-  // Props comunes para SavingsGoals (móvil y desktop)
   const savingsGoalsProps = {
     data,
-    addGoal,
-    updateGoal,
-    deleteGoal,
-    addDeposit,
-    deleteDeposit,
-    setAddingTo,
-    addingTo,
+    addGoal, updateGoal, deleteGoal, addDeposit, deleteDeposit,
+    setAddingTo, addingTo,
   };
 
   // ══════════════════════════════════════════════
@@ -218,7 +169,6 @@ export default function Dashboard({ user, theme, toggleTheme }) {
         <ValidationToast message={validationError} />
 
         <div className="app-mobile">
-          {/* Header */}
           <div className="m-header">
             <div>
               <div className="m-header__title">
@@ -230,22 +180,17 @@ export default function Dashboard({ user, theme, toggleTheme }) {
               <div className="m-header__subtitle">{formatMonthLabelWithCycle(selectedMonth)}</div>
             </div>
             <UserMenu
-              user={user}
-              theme={theme}
-              toggleTheme={toggleTheme}
-              onLogout={handleLogout}
-              onReset={() => setShowResetModal(true)}
+              user={user} theme={theme} toggleTheme={toggleTheme}
+              onLogout={handleLogout} onReset={() => setShowResetModal(true)}
             />
           </div>
 
-          {/* Selector de mes (todas las pantallas) */}
           <MonthSelector
             selectedMonth={selectedMonth}
             setSelectedMonth={setSelectedMonth}
             allMonths={allMonths}
           />
 
-          {/* Contenido según tab activo */}
           {mobileTab === "home" && (
             <MobileSummary
               totalPending={totalPending}
@@ -265,12 +210,9 @@ export default function Dashboard({ user, theme, toggleTheme }) {
                 data={data}
                 filteredPayments={filteredPayments}
                 save={save}
-                addRow={addRow}
-                deleteRow={deleteRow}
-                updField={updField}
+                addRow={addRow} deleteRow={deleteRow} updField={updField}
                 selectedMonth={selectedMonth}
-                setAddingTo={setAddingTo}
-                addingTo={addingTo}
+                setAddingTo={setAddingTo} addingTo={addingTo}
                 mobileMode
               />
             </MobileSection>
@@ -282,11 +224,9 @@ export default function Dashboard({ user, theme, toggleTheme }) {
                 <DebtTable
                   data={data}
                   addDebtWithPlan={addDebtWithPlan}
-                  deleteRow={deleteRow}
-                  saveRowEdit={saveRowEdit}
+                  deleteRow={deleteRow} saveRowEdit={saveRowEdit}
                   selectedMonth={selectedMonth}
-                  setAddingTo={setAddingTo}
-                  addingTo={addingTo}
+                  setAddingTo={setAddingTo} addingTo={addingTo}
                   mobileMode
                 />
               </MobileSection>
@@ -301,12 +241,9 @@ export default function Dashboard({ user, theme, toggleTheme }) {
               <MobileSection title="Ingresos del ciclo">
                 <IncomeTable
                   filteredIncomes={filteredIncomes}
-                  addRow={addRow}
-                  deleteRow={deleteRow}
-                  saveRowEdit={saveRowEdit}
+                  addRow={addRow} deleteRow={deleteRow} saveRowEdit={saveRowEdit}
                   selectedMonth={selectedMonth}
-                  setAddingTo={setAddingTo}
-                  addingTo={addingTo}
+                  setAddingTo={setAddingTo} addingTo={addingTo}
                   mobileMode
                 />
               </MobileSection>
@@ -317,7 +254,6 @@ export default function Dashboard({ user, theme, toggleTheme }) {
                 <SavingsGoals {...savingsGoalsProps} mobileMode />
               </MobileSection>
 
-              {/* 🆕 Botón de "Categorías del ciclo" en la tab Más */}
               <button
                 className="btn-secondary"
                 style={{ width: "100%", marginTop: 8 }}
@@ -337,23 +273,21 @@ export default function Dashboard({ user, theme, toggleTheme }) {
           )}
         </div>
 
-        {/* Tab bar inferior */}
         <TabBar
           active={mobileTab}
           onChange={setMobileTab}
           onAddClick={() => setShowQuickAdd(true)}
         />
 
-        {/* Quick-add sheet */}
         {showQuickAdd && (
           <QuickAddSheet
             addRow={addRow}
             selectedMonth={selectedMonth}
             onClose={() => setShowQuickAdd(false)}
+            data={data}
           />
         )}
 
-        {/* Cancel floating si añadiendo */}
         {addingTo && (
           <button
             className="btn-secondary"
@@ -379,7 +313,6 @@ export default function Dashboard({ user, theme, toggleTheme }) {
           />
         )}
 
-        {/* 🆕 Modal de categorías del ciclo (móvil) */}
         {showCategories && (
           <CategoriesOverview
             data={data}
@@ -399,7 +332,6 @@ export default function Dashboard({ user, theme, toggleTheme }) {
       <ValidationToast message={validationError} />
 
       <div className="app-desktop">
-        {/* Sidebar */}
         <aside className="sidebar">
           <div className="sidebar__logo">
             <div className="sidebar__logo-icon">€</div>
@@ -411,7 +343,6 @@ export default function Dashboard({ user, theme, toggleTheme }) {
               <span className="nav-item__icon">📊</span>
               <span>Resumen</span>
             </button>
-            {/* 🆕 Entrada "Categorías" en el sidebar desktop */}
             <button className="nav-item" onClick={() => setShowCategories(true)}>
               <span className="nav-item__icon">🏷️</span>
               <span>Categorías</span>
@@ -431,19 +362,14 @@ export default function Dashboard({ user, theme, toggleTheme }) {
             </button>
 
             <UserMenu
-              user={user}
-              theme={theme}
-              toggleTheme={toggleTheme}
-              onLogout={handleLogout}
-              onReset={() => setShowResetModal(true)}
+              user={user} theme={theme} toggleTheme={toggleTheme}
+              onLogout={handleLogout} onReset={() => setShowResetModal(true)}
               inline
             />
           </div>
         </aside>
 
-        {/* Main */}
         <main className="app-desktop__main">
-          {/* Header con selector de mes */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, flexWrap: "wrap", gap: 12 }}>
             <div>
               <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.03em", color: "var(--text-primary)" }}>
@@ -461,34 +387,27 @@ export default function Dashboard({ user, theme, toggleTheme }) {
             />
           </div>
 
-          {/* Métricas financieras: 3 filas × 3 cards (fuente única: calcExpenseBreakdown) */}
           <MetricsCards
             data={data}
             selectedMonth={selectedMonth}
             totalPending={totalPending}
           />
 
-          {/* Grid principal */}
           <div className="desktop-grid">
             <div className="desktop-col">
               <DebtTable
                 data={data}
                 addDebtWithPlan={addDebtWithPlan}
-                deleteRow={deleteRow}
-                saveRowEdit={saveRowEdit}
+                deleteRow={deleteRow} saveRowEdit={saveRowEdit}
                 selectedMonth={selectedMonth}
-                setAddingTo={setAddingTo}
-                addingTo={addingTo}
+                setAddingTo={setAddingTo} addingTo={addingTo}
               />
               <FixedExpenses {...fixedExpensesProps} />
               <IncomeTable
                 filteredIncomes={filteredIncomes}
-                addRow={addRow}
-                deleteRow={deleteRow}
-                saveRowEdit={saveRowEdit}
+                addRow={addRow} deleteRow={deleteRow} saveRowEdit={saveRowEdit}
                 selectedMonth={selectedMonth}
-                setAddingTo={setAddingTo}
-                addingTo={addingTo}
+                setAddingTo={setAddingTo} addingTo={addingTo}
               />
               <VariableExpenses {...variableExpensesProps} />
             </div>
@@ -498,12 +417,9 @@ export default function Dashboard({ user, theme, toggleTheme }) {
                 data={data}
                 filteredPayments={filteredPayments}
                 save={save}
-                addRow={addRow}
-                deleteRow={deleteRow}
-                updField={updField}
+                addRow={addRow} deleteRow={deleteRow} updField={updField}
                 selectedMonth={selectedMonth}
-                setAddingTo={setAddingTo}
-                addingTo={addingTo}
+                setAddingTo={setAddingTo} addingTo={addingTo}
               />
               <SavingsGoals {...savingsGoalsProps} />
             </div>
@@ -536,7 +452,6 @@ export default function Dashboard({ user, theme, toggleTheme }) {
         />
       )}
 
-      {/* 🆕 Modal de categorías del ciclo (desktop) */}
       {showCategories && (
         <CategoriesOverview
           data={data}
@@ -548,9 +463,6 @@ export default function Dashboard({ user, theme, toggleTheme }) {
   );
 }
 
-// ══════════════════════════════════════════════
-// Modal reset (inline para simplificar)
-// ══════════════════════════════════════════════
 function ResetModal({ onCancel, onConfirm }) {
   return (
     <div className="modal-backdrop" onClick={onCancel}>
