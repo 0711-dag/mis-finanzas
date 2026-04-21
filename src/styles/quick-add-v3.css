@@ -1,0 +1,44 @@
+/* ══════════════════════════════════════════════
+   📱 Quick-Add Sheet v3 — Entrega 1/3
+   ──────────────────────────────────────────────
+   Solo AÑADE reglas nuevas. No modifica ni pisa
+   ninguna regla existente de global.css.
+   Importado una única vez desde main.jsx.
+   ══════════════════════════════════════════════ */
+
+/* Variante compacta del grupo de chips de categoría:
+   usada cuando los chips están JUSTO DEBAJO del importe
+   (más pegados al resto del formulario). */
+.cat-chips--compact {
+  margin-bottom: 12px;
+  transition: margin var(--anim-fast);
+}
+
+/* Estado de error: highlight rojo alrededor del grupo
+   cuando el usuario intenta guardar sin elegir categoría.
+   Usamos outline (no border) para no afectar el layout. */
+.cat-chips--error {
+  border-radius: var(--radius-md);
+  outline: 1.5px solid var(--danger);
+  outline-offset: 4px;
+}
+
+/* Chip "+ Más (N)" / "− Menos" — aspecto discreto con
+   borde punteado para diferenciarlo de las categorías reales. */
+.cat-chip--more {
+  color: var(--text-tertiary);
+  border-style: dashed;
+  border-color: var(--border-default);
+  background: transparent;
+  /* Reutiliza layout, padding y tipografía de .cat-chip */
+}
+
+.cat-chip--more:active {
+  background: var(--bg-subtle);
+  transform: scale(0.94);
+}
+
+/* Modo oscuro: borde un poco más suave para que no grite */
+[data-theme="dark"] .cat-chip--more {
+  border-color: var(--border-strong);
+}
