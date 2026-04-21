@@ -3,6 +3,7 @@ import Section from "./Section.jsx";
 import ActionButtons from "./shared/ActionButtons.jsx";
 import { fmt, fmtDate, todayISO, monthKey, addMonths } from "../utils/format.js";
 import { isDateInCycle } from "../utils/cycle.js";
+import { isDebtFormReady, previewDebtPlan } from "../validation.js";
 
 // Configuración visual de cada tipo de deuda
 const DEBT_TYPE_CONFIG = {
@@ -33,9 +34,42 @@ function getDayFromISO(iso) {
   return day;
 }
 
-export default function DebtTable({ data, addDebtWithPlan, deleteRow, saveRowEdit, selectedMonth, setAddingTo, addingTo, mobileMode }) {
+// 🆕 Construye el "draft" pasado a los validadores a partir del state local.
+// Lo extraemos para reusar en el botón (isDebtFormReady) y en el preview
+// (previewDebtPlan), evitando que la lógica de conversión esté duplicada.
+function buildDebtDraft(newRow) {
+  return {
+    tipo: newRow.tipo || "cuotas",
+    entidad: newRow.entidad,
+    fechaInicio: newRow.fechaInicio,
+    saldoPendiente: parseFloat(newRow.saldoPendiente) || 0,
+    proxCuota: parseFloat(newRow.proxCuota) || 0,
+    totalCuotas: parseInt(newRow.totalCuotas) || 0,
+    cuotaActual: 0,
+    limiteCredito: parseFloat(newRow.limiteCredito) || 0,
+    pagoMinimo: parseFloat(newRow.pagoMinimo) || 0,
+    tasaInteres: parseFloat(newRow.tasaInteres) || 0,
+  };
+}
+
+export default function DebtTable({
+  data,
+  addDebtWithPlan,
+  deleteRow,
+  saveRowEdit,
+  selectedMonth,
+  setAddingTo,
+  addingTo,
+  mobileMode,
+  // 🆕 Callback opcional: si Dashboard lo provee, se usa para mostrar
+  // un toast verde de éxito al crear la deuda. Si no, no hace nada
+  // (retrocompatible con el resto de invocaciones del componente).
+  onSuccessNotify,
+}) {
   const [newRow, setNewRow] = useState({});
   const [editingRow, setEditingRow] = useState(null);
+  // 🆕 Mostrar/ocultar el preview detallado de cuotas (toggleable).
+  const [showPreview, setShowPreview] = useState(false);
 
   const debts = data.debts || [];
   const totalDebtPending = debts.reduce((s, d) => s + (d.saldoPendiente || 0), 0);
@@ -55,6 +89,7 @@ export default function DebtTable({ data, addDebtWithPlan, deleteRow, saveRowEdi
 
   const handleAdd = () => {
     setAddingTo("debts");
+    setShowPreview(false);
     setNewRow({
       tipo: "cuotas",
       entidad: "",
@@ -69,20 +104,41 @@ export default function DebtTable({ data, addDebtWithPlan, deleteRow, saveRowEdi
   };
 
   const handleSaveNew = () => {
-    const success = addDebtWithPlan({
-      tipo: newRow.tipo || "cuotas",
-      entidad: newRow.entidad,
-      fechaInicio: newRow.fechaInicio,
-      saldoPendiente: parseFloat(newRow.saldoPendiente) || 0,
-      proxCuota: parseFloat(newRow.proxCuota) || 0,
-      totalCuotas: parseInt(newRow.totalCuotas) || 0,
-      cuotaActual: 0,
-      limiteCredito: parseFloat(newRow.limiteCredito) || 0,
-      pagoMinimo: parseFloat(newRow.pagoMinimo) || 0,
-      tasaInteres: parseFloat(newRow.tasaInteres) || 0,
-    });
-    if (success) setAddingTo(null);
+    const draft = buildDebtDraft(newRow);
+    const success = addDebtWithPlan(draft);
+    if (success) {
+      // Notificar arriba (Dashboard) para que muestre toast de éxito.
+      if (typeof onSuccessNotify === "function") {
+        const numCuotas = parseInt(newRow.totalCuotas) || 0;
+        const esTarjeta = (newRow.tipo || "cuotas") === "tarjeta";
+        const msg = esTarjeta
+          ? `Tarjeta "${draft.entidad}" guardada`
+          : numCuotas > 0
+            ? `Deuda "${draft.entidad}" guardada (${numCuotas} cuotas)`
+            : `Deuda "${draft.entidad}" guardada`;
+        onSuccessNotify(msg);
+      }
+      setAddingTo(null);
+      setShowPreview(false);
+    }
   };
+
+  // 🆕 Estado del formulario: ¿está listo para crear?
+  // Esto evita que el usuario pulse "Crear deuda" cuando faltan campos
+  // y se encuentre con un toast de error críptico.
+  const draftForCheck = buildDebtDraft(newRow);
+  const formReady = isDebtFormReady(draftForCheck);
+  const tipoActual = newRow.tipo || "cuotas";
+  const generaPlan = tipoActual === "cuotas" || tipoActual === "prestamo";
+
+  // 🆕 Preview del plan de cuotas (sólo cuando el form está casi listo).
+  // Mostramos los primeros 3 y los últimos 3 si hay muchas, para no
+  // empapelar la UI con 24 fechas.
+  const planPreview = generaPlan ? previewDebtPlan(draftForCheck) : [];
+  const numCuotasPreview = planPreview.length;
+  const previewTop = planPreview.slice(0, 3);
+  const previewBottom = numCuotasPreview > 6 ? planPreview.slice(-3) : [];
+  const hayPreview = numCuotasPreview > 0;
 
   // Formulario de añadir — campos dinámicos según tipo
   const AddForm = (
@@ -107,7 +163,7 @@ export default function DebtTable({ data, addDebtWithPlan, deleteRow, saveRowEdi
             <button
               key={key}
               type="button"
-              onClick={() => setNewRow({ ...newRow, tipo: key })}
+              onClick={() => { setNewRow({ ...newRow, tipo: key }); setShowPreview(false); }}
               style={{
                 flex: 1, minWidth: 90,
                 padding: "8px 10px",
@@ -181,8 +237,7 @@ export default function DebtTable({ data, addDebtWithPlan, deleteRow, saveRowEdi
             onChange={(e) => setNewRow({ ...newRow, tasaInteres: e.target.value })}
           />
           <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4, marginBottom: 10, lineHeight: 1.4 }}>
-            💡 Las tarjetas no generan un plan de cuotas automático.
-            Actualiza el saldo manualmente al revisar tu estado de cuenta.
+            💡 Las tarjetas no generan un plan de cuotas automático. Actualiza el saldo manualmente al revisar tu estado de cuenta.
           </div>
         </>
       ) : (
@@ -213,17 +268,92 @@ export default function DebtTable({ data, addDebtWithPlan, deleteRow, saveRowEdi
               onChange={(e) => setNewRow({ ...newRow, tasaInteres: e.target.value })}
             />
           )}
-          {newRow.totalCuotas && newRow.fechaInicio && newRow.proxCuota && (
-            <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4, marginBottom: 10, lineHeight: 1.4 }}>
-              Se crearán {parseInt(newRow.totalCuotas) || 0} pagos de {fmt(parseFloat(newRow.proxCuota) || 0)} desde {fmtDate(newRow.fechaInicio)}. Los pagos se asignan automáticamente al ciclo 27→26.
+
+          {/* 🆕 Resumen + toggle de preview detallado */}
+          {hayPreview && (
+            <div style={{
+              fontSize: 11, color: "var(--text-secondary)",
+              marginTop: 4, marginBottom: 10, lineHeight: 1.4,
+              padding: "8px 10px",
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border-subtle)",
+              borderRadius: "var(--radius-sm)",
+            }}>
+              <div>
+                Se crearán <strong>{numCuotasPreview}</strong> pagos de{" "}
+                <strong>{fmt(parseFloat(newRow.proxCuota) || 0)}</strong> desde{" "}
+                <strong>{fmtDate(newRow.fechaInicio)}</strong>.
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPreview((v) => !v)}
+                style={{
+                  marginTop: 6,
+                  padding: "2px 0",
+                  background: "transparent",
+                  color: "var(--accent)",
+                  fontSize: 11, fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                {showPreview ? "▲ Ocultar fechas" : "▼ Ver fechas exactas"}
+              </button>
+
+              {showPreview && (
+                <div style={{
+                  marginTop: 6, paddingTop: 6,
+                  borderTop: "1px dashed var(--border-default)",
+                  display: "flex", flexDirection: "column", gap: 3,
+                  fontFeatureSettings: "'tnum'",
+                }}>
+                  {previewTop.map((p) => (
+                    <div key={p.cuotaNum} style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ color: "var(--text-tertiary)" }}>Cuota {p.cuotaNum}</span>
+                      <span>{fmtDate(p.dayPago)} · {fmt(p.monto)}</span>
+                    </div>
+                  ))}
+                  {previewBottom.length > 0 && (
+                    <>
+                      <div style={{ color: "var(--text-tertiary)", textAlign: "center", fontSize: 10 }}>
+                        … {numCuotasPreview - 6} cuotas más …
+                      </div>
+                      {previewBottom.map((p) => (
+                        <div key={p.cuotaNum} style={{ display: "flex", justifyContent: "space-between" }}>
+                          <span style={{ color: "var(--text-tertiary)" }}>Cuota {p.cuotaNum}</span>
+                          <span>{fmtDate(p.dayPago)} · {fmt(p.monto)}</span>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </>
       )}
 
-      <button className="btn-primary btn-primary--accent" onClick={handleSaveNew} style={{ marginTop: 4 }}>
+      <button
+        className="btn-primary btn-primary--accent"
+        onClick={handleSaveNew}
+        disabled={!formReady}
+        style={{
+          marginTop: 4,
+          opacity: formReady ? 1 : 0.5,
+          cursor: formReady ? "pointer" : "not-allowed",
+        }}
+        title={formReady ? "Crear deuda" : "Completa los campos obligatorios"}
+      >
         Crear deuda
       </button>
+      {!formReady && (
+        <div style={{
+          fontSize: 10, color: "var(--text-tertiary)",
+          textAlign: "center", marginTop: 4,
+          fontStyle: "italic",
+        }}>
+          Completa entidad, saldo{generaPlan ? ", cuotas, importe y fecha" : ""} para activar el botón
+        </div>
+      )}
     </div>
   );
 
