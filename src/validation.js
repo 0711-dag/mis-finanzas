@@ -1,6 +1,7 @@
 // ══════════════════════════════════════════════
 // 🔒 Validación y sanitización de datos
 // ══════════════════════════════════════════════
+import { normalizeCategoryLabel } from "./utils/categoryDefaults.js";
 
 // Límites para evitar abuso de la base de datos
 const LIMITS = {
@@ -14,7 +15,7 @@ const LIMITS = {
   MAX_SAVINGS_GOALS: 20,
   MAX_SAVINGS_DEPOSITS: 500,
   MAX_DEBT_PAYMENTS: 500,
-  MAX_CUSTOM_CATEGORIES: 50,   // NUEVO: categorías custom por usuario
+  MAX_CUSTOM_CATEGORIES: 50,   // categorías custom por usuario
   MAX_AMOUNT: 99_999_999,
   MAX_CUOTAS: 360,
 };
@@ -23,7 +24,15 @@ const LIMITS = {
 const DEBT_TYPES = ["tarjeta", "cuotas", "prestamo"];
 const INCOME_TYPES = ["fijo", "variable"];
 const GOAL_TYPES = ["emergencia", "personalizada"];
-const CATEGORY_TYPES = ["fixed", "variable"]; // NUEVO
+
+// 🆕 Tipos de categoría: ahora las categorías son globales, así que
+// aceptamos "any" (recomendado para nuevas) además de "fixed"/"variable"
+// por compatibilidad con datos antiguos.
+const CATEGORY_TYPES = ["fixed", "variable", "any"];
+
+// 🆕 Clasificación contable por defecto para nuevas categorías custom.
+// El usuario puede elegir una distinta al crearla.
+const TIPO_GASTO_VALUES = ["CF", "CV", "Discrecional"];
 
 function sanitizeText(text, maxLen = LIMITS.MAX_TEXT_LENGTH) {
   if (typeof text !== "string") return "";
@@ -71,7 +80,7 @@ function canAddMore(section, currentData) {
     savingsGoals: LIMITS.MAX_SAVINGS_GOALS,
     savingsDeposits: LIMITS.MAX_SAVINGS_DEPOSITS,
     debtPayments: LIMITS.MAX_DEBT_PAYMENTS,
-    customCategories: LIMITS.MAX_CUSTOM_CATEGORIES, // NUEVO
+    customCategories: LIMITS.MAX_CUSTOM_CATEGORIES,
   };
   const max = limits[section];
   if (!max) return true;
@@ -124,7 +133,8 @@ function validateFixedExpense(expense) {
     diaPago: sanitizeText(expense.diaPago, 10),
     monto: sanitizeAmount(expense.monto),
     recurrente: !!expense.recurrente,
-    categoria: sanitizeText(expense.categoria, 30),
+    // 🆕 Normalizamos la categoría a la etiqueta unificada si hace falta
+    categoria: normalizeCategoryLabel(sanitizeText(expense.categoria, 30)),
   };
   if (!clean.concepto) errors.push("Falta el concepto");
   if (clean.monto <= 0) errors.push("El monto debe ser mayor que 0");
@@ -162,7 +172,8 @@ function validateVariableExpense(expense) {
     monto: sanitizeAmount(expense.monto),
     fecha: expense.fecha,
     month: expense.month,
-    categoria: sanitizeText(expense.categoria, 30),
+    // 🆕 Normalizamos la categoría a la etiqueta unificada si hace falta
+    categoria: normalizeCategoryLabel(sanitizeText(expense.categoria, 30)),
   };
   if (!clean.concepto) errors.push("Falta el concepto");
   if (clean.monto <= 0) errors.push("El monto debe ser mayor que 0");
@@ -190,7 +201,8 @@ function validateBudget(budget) {
   const errors = [];
   const clean = {
     cycleMK: budget.cycleMK,
-    categoria: sanitizeText(budget.categoria, 30),
+    // 🆕 Normalizamos la categoría a la etiqueta unificada
+    categoria: normalizeCategoryLabel(sanitizeText(budget.categoria, 30)),
     monto: sanitizeAmount(budget.monto),
   };
   if (!isValidMonth(clean.cycleMK)) errors.push("Ciclo inválido");
@@ -255,23 +267,29 @@ function validateDebtExtraPayment(payment) {
 
 /**
  * Valida una categoría personalizada creada por el usuario.
- * - `tipo` debe ser "fixed" o "variable"
+ * - `tipo` debe ser "fixed" | "variable" | "any"; "any" es el recomendado
+ *   porque la lista ahora es única. Si llega vacío, se asume "any".
  * - `nombre` obligatorio, máx. 25 caracteres visibles
  * - `emoji` opcional; si falta, se usará 📦 como fallback
+ * - `tipoGasto` opcional; si viene, debe ser "CF" | "CV" | "Discrecional".
+ *   Si no viene, se deja undefined y se infiere por nombre/origen.
  */
 function validateCustomCategory(cat) {
   const errors = [];
-  const tipoRaw = typeof cat.tipo === "string" ? cat.tipo.toLowerCase() : "";
-  const tipo = CATEGORY_TYPES.includes(tipoRaw) ? tipoRaw : null;
+  const tipoRaw = typeof cat.tipo === "string" ? cat.tipo.toLowerCase() : "any";
+  const tipo = CATEGORY_TYPES.includes(tipoRaw) ? tipoRaw : "any";
+
+  const tipoGastoRaw = typeof cat.tipoGasto === "string" ? cat.tipoGasto : "";
+  const tipoGasto = TIPO_GASTO_VALUES.includes(tipoGastoRaw) ? tipoGastoRaw : "";
 
   const clean = {
     tipo,
     nombre: sanitizeText(cat.nombre, 25),
     // El emoji puede contener caracteres como "🛡️" (con variante) → no lo sanitizamos agresivamente.
     emoji: typeof cat.emoji === "string" ? cat.emoji.trim().slice(0, 4) : "",
+    tipoGasto, // "" si no se declaró → el cálculo usará la inferencia
   };
 
-  if (!tipo) errors.push("Tipo de categoría inválido");
   if (!clean.nombre) errors.push("Falta el nombre de la categoría");
   if (clean.nombre.length < 2) errors.push("El nombre es demasiado corto");
 
@@ -280,7 +298,8 @@ function validateCustomCategory(cat) {
 
 // ══════════════════════════════════════════════
 // MIGRACIÓN AUTOMÁTICA DE DATOS EXISTENTES
-// Aplica valores por defecto sin romper nada
+// Aplica valores por defecto sin romper nada + 🆕 normaliza categorías
+// antiguas ("⛽ Transporte" → "🚗 Transporte", "🏠 Hogar" → "🏠 Vivienda").
 // ══════════════════════════════════════════════
 function migrateData(rawData) {
   if (!rawData) return rawData;
@@ -295,20 +314,29 @@ function migrateData(rawData) {
     })),
     payments: rawData.payments || [],
     fixedExpenses: (rawData.fixedExpenses || []).map((f) => ({
-      categoria: f.categoria || "",
       ...f,
+      // 🆕 Normalizar categoría legacy (no sobreescribe las que ya son válidas)
+      categoria: normalizeCategoryLabel(f.categoria || ""),
     })),
     incomes: (rawData.incomes || []).map((i) => ({
       titular: i.titular || "yo",
       tipo: i.tipo && INCOME_TYPES.includes(i.tipo) ? i.tipo : "fijo",
       ...i,
     })),
-    variableExpenses: rawData.variableExpenses || [],
-    budgets: rawData.budgets || [],
+    // 🆕 Normalizar categorías en gastos variables
+    variableExpenses: (rawData.variableExpenses || []).map((v) => ({
+      ...v,
+      categoria: normalizeCategoryLabel(v.categoria || ""),
+    })),
+    // 🆕 Normalizar categorías en presupuestos (para que se sigan vinculando)
+    budgets: (rawData.budgets || []).map((b) => ({
+      ...b,
+      categoria: normalizeCategoryLabel(b.categoria || ""),
+    })),
     savingsGoals: rawData.savingsGoals || [],
     savingsDeposits: rawData.savingsDeposits || [],
     debtPayments: rawData.debtPayments || [],
-    // 🆕 Categorías custom — array vacío por defecto para usuarios existentes
+    // Categorías custom — array vacío por defecto para usuarios existentes
     customCategories: rawData.customCategories || [],
   };
 }
@@ -319,6 +347,7 @@ export {
   INCOME_TYPES,
   GOAL_TYPES,
   CATEGORY_TYPES,
+  TIPO_GASTO_VALUES,
   sanitizeText,
   sanitizeAmount,
   sanitizeInteger,
