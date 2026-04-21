@@ -1,6 +1,8 @@
 // ══════════════════════════════════════════════
 // 📋 Informe mensual del ciclo
+// + Exportación a PDF (html2pdf.js, carga perezosa)
 // ══════════════════════════════════════════════
+import { useRef, useState } from "react";
 import { fmt } from "../utils/format.js";
 import { formatMonthLabelWithCycle } from "../utils/cycle.js";
 import {
@@ -221,6 +223,11 @@ function HealthSection({ metrics, ratio, ratioEval }) {
 }
 
 export default function ReportModal({ data, filteredPayments, filteredIncomes, filteredVarExpenses, selectedMonth, onClose }) {
+  // Ref al contenedor que se va a convertir en PDF
+  const reportRef = useRef(null);
+  // Estado del botón de descarga: idle | loading
+  const [downloading, setDownloading] = useState(false);
+
   const totalPayments = filteredPayments.reduce((s, p) => s + (p.monto || 0), 0);
   const totalIncomes = filteredIncomes.reduce((s, i) => s + (i.amount || 0), 0);
   const totalVarExpenses = filteredVarExpenses.reduce((s, v) => s + (v.monto || 0), 0);
@@ -250,6 +257,57 @@ export default function ReportModal({ data, filteredPayments, filteredIncomes, f
   const savingsGoals = data.savingsGoals || [];
   const savingsDeposits = data.savingsDeposits || [];
 
+  // ══════════════════════════════════════════════
+  // Descargar el informe como PDF
+  // - Carga html2pdf.js de forma perezosa para no inflar el bundle inicial
+  // - Marca el contenedor con clase `report-printing` durante la captura
+  //   para que el CSS de impresión expanda el contenido y oculte botones
+  // ══════════════════════════════════════════════
+  const handleDownloadPdf = async () => {
+    if (!reportRef.current || downloading) return;
+
+    setDownloading(true);
+    try {
+      const html2pdf = (await import("html2pdf.js")).default;
+
+      // Nombre del archivo: informe-YYYY-MM.pdf usando el ciclo seleccionado
+      const filename = `informe-${selectedMonth || "ciclo"}.pdf`;
+
+      // Marcamos el contenedor para que el CSS de captura entre en juego
+      reportRef.current.classList.add("report-printing");
+
+      const opt = {
+        margin: [10, 10, 10, 10], // mm
+        filename,
+        image: { type: "jpeg", quality: 0.95 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: "#ffffff",
+          // Ignorar elementos marcados con data-no-print (los botones del header)
+          ignoreElements: (el) => el?.dataset?.noPrint === "true",
+        },
+        jsPDF: {
+          unit: "mm",
+          format: "a4",
+          orientation: "portrait",
+        },
+        pagebreak: { mode: ["css", "legacy"] },
+      };
+
+      await html2pdf().set(opt).from(reportRef.current).save();
+    } catch (err) {
+      console.error("Error generando PDF:", err);
+      alert("No se pudo generar el PDF. Inténtalo de nuevo.");
+    } finally {
+      // Quitamos siempre la clase, haya ido bien o mal
+      if (reportRef.current) {
+        reportRef.current.classList.remove("report-printing");
+      }
+      setDownloading(false);
+    }
+  };
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -260,10 +318,40 @@ export default function ReportModal({ data, filteredPayments, filteredIncomes, f
               {formatMonthLabelWithCycle(selectedMonth)}
             </div>
           </div>
-          <button className="modal__close" onClick={onClose}>✕</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }} data-no-print="true">
+            <button
+              className="btn-secondary"
+              onClick={handleDownloadPdf}
+              disabled={downloading}
+              style={{
+                fontSize: 12,
+                padding: "6px 12px",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                opacity: downloading ? 0.6 : 1,
+                cursor: downloading ? "wait" : "pointer",
+              }}
+              title="Descargar informe como PDF"
+            >
+              {downloading ? (
+                <>
+                  <span className="spinner-dot" style={{ width: 12, height: 12 }} />
+                  <span>Generando…</span>
+                </>
+              ) : (
+                <>
+                  <span>📄</span>
+                  <span>Descargar PDF</span>
+                </>
+              )}
+            </button>
+            <button className="modal__close" onClick={onClose}>✕</button>
+          </div>
         </div>
 
-        <div className="modal__body">
+        {/* Contenedor que se exporta a PDF */}
+        <div className="modal__body" ref={reportRef}>
           <div style={{
             textAlign: "center", padding: "10px 0 22px",
             borderBottom: "1px solid var(--border-subtle)",
@@ -382,8 +470,38 @@ export default function ReportModal({ data, filteredPayments, filteredIncomes, f
               </span>
             </div>
           </div>
+
+          {/* Pie de página visible solo en el PDF */}
+          <div className="report-pdf-footer" style={{
+            display: "none",
+            marginTop: 24,
+            paddingTop: 12,
+            borderTop: "1px solid var(--border-subtle)",
+            fontSize: 10,
+            color: "var(--text-tertiary)",
+            textAlign: "center",
+          }}>
+            Generado el {new Date().toLocaleDateString("es-ES", {
+              day: "2-digit", month: "long", year: "numeric",
+            })} · Finanzas Familiares
+          </div>
         </div>
       </div>
+
+      {/* Estilos aplicados solo durante la captura para PDF.
+          - Expande la altura del modal para que entre todo el contenido
+          - Asegura fondo blanco y oculta scrollbars
+          - Muestra el pie de página del PDF */}
+      <style>{`
+        .modal__body.report-printing {
+          max-height: none !important;
+          overflow: visible !important;
+          background: #ffffff !important;
+        }
+        .modal__body.report-printing .report-pdf-footer {
+          display: block !important;
+        }
+      `}</style>
     </div>
   );
 }
