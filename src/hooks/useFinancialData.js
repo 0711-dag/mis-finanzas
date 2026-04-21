@@ -84,7 +84,22 @@ export default function useFinancialData(user) {
   const isEditingRef = useRef(false);
 
   const dbPath = user ? `users/${user.uid}/family-finance` : null;
-  const { debouncedSave, isSavingRef } = useDebouncedSave(dbPath, user, setSyncing, setLastSyncTime);
+
+  // 🆕 Callback que recibe useDebouncedSave cuando set() falla.
+  // Lo encaminamos al mismo `validationError` que ya muestra el toast,
+  // para que el usuario se entere del problema en lugar de descubrirlo
+  // tras refrescar y perder sus datos.
+  const handleSaveError = useCallback((msg) => {
+    setValidationError(msg);
+  }, []);
+
+  const { debouncedSave, isSavingRef } = useDebouncedSave(
+    dbPath,
+    user,
+    setSyncing,
+    setLastSyncTime,
+    handleSaveError
+  );
 
   // Auto-clear validation errors
   useEffect(() => {
@@ -345,7 +360,10 @@ export default function useFinancialData(user) {
           const payDate = `${py}-${pm}-${day}`;
           const financialMonth = dateToFinancialMonth(payDate);
           newPayments.push({
-            id: genId() + i,
+            // 🆕 Antes era `genId() + i` (un solo genId() reutilizado con sufijo
+            // numérico). Ahora generamos un ID único por cada cuota: más seguro
+            // ante colisiones futuras y consistente con el resto del código.
+            id: genId(),
             concepto: `${cleanDebt.entidad}`,
             monto: cleanDebt.proxCuota || 0,
             dayPago: payDate,
