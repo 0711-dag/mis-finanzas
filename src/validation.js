@@ -8,7 +8,7 @@ import {
   buildCategoryLabel,
   DEFAULT_IDS,
 } from "./utils/categoryDefaults.js";
-import { genId } from "./utils/format.js";
+import { genId, monthKey, addMonths } from "./utils/format.js";
 
 // Límites para evitar abuso de la base de datos
 const LIMITS = {
@@ -64,7 +64,7 @@ function sanitizeInteger(value, max = LIMITS.MAX_CUOTAS) {
   return num;
 }
 
-// 🆕 Sanea fechas: si no es una "YYYY-MM-DD" válida, devuelve "" (nunca undefined).
+// Sanea fechas: si no es una "YYYY-MM-DD" válida, devuelve "" (nunca undefined).
 // Firebase Realtime Database rechaza objetos con propiedades undefined,
 // por lo que es CRÍTICO no dejar estos campos sin valor explícito.
 function sanitizeDateString(value) {
@@ -107,7 +107,7 @@ function canAddMore(section, currentData) {
 }
 
 // ══════════════════════════════════════════════
-// 🆕 stripUndefined — Defensa en profundidad
+// stripUndefined — Defensa en profundidad
 // ──────────────────────────────────────────────
 // Firebase Realtime Database lanza un error y aborta TODA la escritura
 // si encuentra cualquier propiedad con valor `undefined` en el árbol.
@@ -156,7 +156,7 @@ function validateDebt(debt) {
     proxCuota: sanitizeAmount(debt.proxCuota),
     totalCuotas: sanitizeInteger(debt.totalCuotas),
     cuotaActual: sanitizeInteger(debt.cuotaActual),
-    // 🆕 Saneada: nunca undefined. "" si no es fecha válida.
+    // Saneada: nunca undefined. "" si no es fecha válida.
     fechaInicio: sanitizeDateString(debt.fechaInicio),
     limiteCredito: sanitizeAmount(debt.limiteCredito),
     pagoMinimo: sanitizeAmount(debt.pagoMinimo),
@@ -178,6 +178,84 @@ function validateDebt(debt) {
   }
 
   return { valid: errors.length === 0, errors, data: clean };
+}
+
+// ══════════════════════════════════════════════
+// 🆕 Helpers UI para el formulario de deudas (Entrega 2)
+// ──────────────────────────────────────────────
+// Estos helpers NO sustituyen a validateDebt — sólo lo utilizan para
+// que el componente DebtTable pueda decidir si habilita el botón
+// "Crear deuda" y para mostrar un preview de las cuotas que se
+// generarán, sin necesidad de duplicar la lógica de validación.
+// ══════════════════════════════════════════════
+
+/**
+ * Devuelve true si el formulario de deuda es lo suficientemente válido
+ * como para guardar (es decir, validateDebt() devolvería valid=true).
+ * Útil para deshabilitar el botón "Crear deuda" mientras falten datos.
+ *
+ * @param {object} debt — el draft del formulario
+ * @returns {boolean}
+ */
+function isDebtFormReady(debt) {
+  if (!debt || typeof debt !== "object") return false;
+  return validateDebt(debt).valid;
+}
+
+/**
+ * Genera un preview de las cuotas que se crearían al guardar la deuda,
+ * SIN tocar el estado ni guardar nada. Mismo cálculo que addDebtWithPlan
+ * en useFinancialData, pero sólo para mostrar al usuario lo que va a
+ * pasar antes de pulsar "Crear deuda".
+ *
+ * Devuelve [] cuando:
+ *  - El tipo no genera plan (tarjeta).
+ *  - Faltan campos clave (totalCuotas, proxCuota o fechaInicio).
+ *  - El número de cuotas excede el límite máximo.
+ *
+ * Cada item del array tiene la forma:
+ *   { cuotaNum, dayPago: "YYYY-MM-DD", monto, financialMonth }
+ *
+ * NOTA: el cálculo se hace sobre los datos saneados (mismo que validateDebt
+ * usa internamente), así que "11/13/2025" o fechas inválidas devuelven [].
+ *
+ * @param {object} debt — el draft del formulario
+ * @param {object} [opts] — { maxPreview?: number }
+ * @returns {Array}
+ */
+function previewDebtPlan(debt, opts = {}) {
+  const maxPreview = Math.max(1, Math.min(LIMITS.MAX_CUOTAS, opts.maxPreview || LIMITS.MAX_CUOTAS));
+
+  if (!debt || typeof debt !== "object") return [];
+
+  // Reusamos validateDebt para sanear y obtener los datos limpios.
+  const v = validateDebt(debt);
+  const clean = v.data || {};
+
+  const tipoGeneraPlan = clean.tipo === "cuotas" || clean.tipo === "prestamo";
+  if (!tipoGeneraPlan) return [];
+  if (clean.totalCuotas <= 0) return [];
+  if (clean.proxCuota <= 0) return [];
+  if (!clean.fechaInicio) return [];
+
+  const startMK = monthKey(clean.fechaInicio);
+  if (!startMK) return [];
+  const day = clean.fechaInicio.split("-")[2] || "01";
+
+  const total = Math.min(clean.totalCuotas, maxPreview);
+  const out = [];
+  for (let i = 0; i < total; i++) {
+    const payMonthRaw = addMonths(startMK, i);
+    const [py, pm] = payMonthRaw.split("-");
+    const payDate = `${py}-${pm}-${day}`;
+    out.push({
+      cuotaNum: i + 1,
+      dayPago: payDate,
+      monto: clean.proxCuota,
+      financialMonth: payMonthRaw, // útil sólo para depuración
+    });
+  }
+  return out;
 }
 
 function validateFixedExpense(expense) {
@@ -210,7 +288,6 @@ function validateIncome(income) {
   const clean = {
     concepto: sanitizeText(income.concepto),
     amount: sanitizeAmount(income.amount),
-    // 🆕 Saneada: nunca undefined.
     fecha: sanitizeDateString(income.fecha),
     month: typeof income.month === "string" ? income.month : "",
     titular: sanitizeText(income.titular, 30) || "yo",
@@ -226,7 +303,6 @@ function validateVariableExpense(expense) {
   const clean = {
     concepto: sanitizeText(expense.concepto),
     monto: sanitizeAmount(expense.monto),
-    // 🆕 Saneada: nunca undefined.
     fecha: sanitizeDateString(expense.fecha),
     month: typeof expense.month === "string" ? expense.month : "",
     // 🆕 v2
@@ -243,7 +319,6 @@ function validatePayment(payment) {
   const clean = {
     concepto: sanitizeText(payment.concepto),
     monto: sanitizeAmount(payment.monto),
-    // 🆕 Saneada: nunca undefined.
     dayPago: sanitizeDateString(payment.dayPago),
     estado: ["PENDIENTE", "PAGADO"].includes(payment.estado) ? payment.estado : "PENDIENTE",
     month: typeof payment.month === "string" ? payment.month : "",
@@ -281,14 +356,11 @@ function validateSavingsGoal(goal) {
     nombre: sanitizeText(goal.nombre, 50),
     tipo,
     objetivo: sanitizeAmount(goal.objetivo),
-    // 🆕 Saneada: nunca undefined. "" si no hay fecha.
     fechaLimite: sanitizeDateString(goal.fechaLimite),
     icono: sanitizeText(goal.icono, 4) || "🎯",
   };
   if (!clean.nombre) errors.push("Falta el nombre de la meta");
   if (clean.objetivo <= 0) errors.push("El objetivo debe ser mayor que 0");
-  // Nota: ya no validamos fechaLimite por separado: sanitizeDateString
-  // devuelve "" si era inválida. La interpretamos como "sin fecha".
   return { valid: errors.length === 0, errors, data: clean };
 }
 
@@ -297,7 +369,6 @@ function validateSavingsDeposit(deposit) {
   const clean = {
     goalId: sanitizeText(deposit.goalId, 50),
     monto: sanitizeAmount(deposit.monto),
-    // 🆕 Saneada: nunca undefined.
     fecha: sanitizeDateString(deposit.fecha),
     month: typeof deposit.month === "string" ? deposit.month : "",
     nota: sanitizeText(deposit.nota || "", 100),
@@ -313,7 +384,6 @@ function validateDebtExtraPayment(payment) {
   const clean = {
     debtId: sanitizeText(payment.debtId, 50),
     monto: sanitizeAmount(payment.monto),
-    // 🆕 Saneada: nunca undefined.
     fecha: sanitizeDateString(payment.fecha),
     month: typeof payment.month === "string" ? payment.month : "",
     nota: sanitizeText(payment.nota || "", 100),
@@ -504,6 +574,9 @@ export {
   validateDebtExtraPayment,
   validateCategory,
   validateCustomCategory,
+  // 🆕 Helpers de UI (Entrega 2)
+  isDebtFormReady,
+  previewDebtPlan,
   // Migración
   migrateData,
   migrateCategoriesTable,
