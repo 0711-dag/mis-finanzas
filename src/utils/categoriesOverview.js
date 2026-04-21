@@ -124,3 +124,38 @@ export function calcCategoriesOverview(data, cycleMK) {
         categoria: label,
         total: r2(stats.total),
         pagado: r2(stats.pagado),
+        pendiente: r2(stats.pendiente),
+        items: stats.items,
+      };
+    })
+    .sort((a, b) => b.total - a.total);
+
+  // ─── 4. Totales agregados ───
+  const totalCategorizado = r2(
+    categorias.reduce((acc, c) => acc + c.total, 0)
+  );
+
+  // El total del ciclo incluye TODO lo que se ha sumado: categorizado,
+  // sin categoría y cuotas de deuda.
+  const totalCiclo = r2(
+    totalCategorizado + sinCat.total + cuotas.total
+  );
+
+  return {
+    categorias,
+    totalCategorizado,
+    sinCategoria: {
+      total: r2(sinCat.total),
+      pagado: r2(sinCat.pagado),
+      pendiente: r2(sinCat.pendiente),
+      items: sinCat.items,
+    },
+    cuotasDeuda: {
+      total: r2(cuotas.total),
+      pagado: r2(cuotas.pagado),
+      pendiente: r2(cuotas.pendiente),
+      items: cuotas.items,
+    },
+    totalCiclo,
+  };
+}
