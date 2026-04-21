@@ -67,6 +67,21 @@ export default function Dashboard({ user, theme, toggleTheme }) {
   const [mobileTab, setMobileTab] = useState("home");
   const [showCategories, setShowCategories] = useState(false);
 
+  // 🆕 Toast de éxito (verde). Distinto del toast de error (validationError),
+  // que es gestionado por useFinancialData. Se muestra cuando un componente
+  // hijo nos avisa de que ha guardado algo correctamente.
+  const [successMsg, setSuccessMsg] = useState("");
+  useEffect(() => {
+    if (!successMsg) return;
+    const t = setTimeout(() => setSuccessMsg(""), 2800);
+    return () => clearTimeout(t);
+  }, [successMsg]);
+
+  // Helper que pasamos a los componentes hijos (DebtTable por ahora) para
+  // notificar éxito. Diseñado para que más componentes lo puedan usar
+  // en el futuro sin cambiar la firma.
+  const notifySuccess = (msg) => setSuccessMsg(msg);
+
   useEffect(() => { isEditingRef.current = !!addingTo; }, [addingTo, isEditingRef]);
 
   useEffect(() => {
@@ -160,13 +175,19 @@ export default function Dashboard({ user, theme, toggleTheme }) {
     setAddingTo, addingTo,
   };
 
+  // 🆕 Si el usuario tiene un mensaje de error activo, NO mostramos el de
+  // éxito a la vez (la prioridad es el error porque suele requerir acción).
+  // Si no, mostramos el de éxito si existe.
+  const toastMessage = validationError || successMsg;
+  const toastKind = validationError ? "error" : (successMsg ? "success" : "error");
+
   // ══════════════════════════════════════════════
   // RENDER MÓVIL
   // ══════════════════════════════════════════════
   if (!isDesktop) {
     return (
       <div className="app-shell">
-        <ValidationToast message={validationError} />
+        <ValidationToast message={toastMessage} kind={toastKind} />
 
         <div className="app-mobile">
           <div className="m-header">
@@ -179,10 +200,20 @@ export default function Dashboard({ user, theme, toggleTheme }) {
               </div>
               <div className="m-header__subtitle">{formatMonthLabelWithCycle(selectedMonth)}</div>
             </div>
-            <UserMenu
-              user={user} theme={theme} toggleTheme={toggleTheme}
-              onLogout={handleLogout} onReset={() => setShowResetModal(true)}
-            />
+            {/* 🆕 Indicador compacto de sincronización — antes solo aparecía
+                en la sidebar de escritorio. En móvil ahora se ve junto al avatar. */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <SyncIndicator
+                syncing={syncing}
+                online={online}
+                lastSyncTime={lastSyncTime}
+                compact
+              />
+              <UserMenu
+                user={user} theme={theme} toggleTheme={toggleTheme}
+                onLogout={handleLogout} onReset={() => setShowResetModal(true)}
+              />
+            </div>
           </div>
 
           <MonthSelector
@@ -228,6 +259,7 @@ export default function Dashboard({ user, theme, toggleTheme }) {
                   selectedMonth={selectedMonth}
                   setAddingTo={setAddingTo} addingTo={addingTo}
                   mobileMode
+                  onSuccessNotify={notifySuccess}
                 />
               </MobileSection>
               <MobileSection title="Gastos fijos">
@@ -329,7 +361,7 @@ export default function Dashboard({ user, theme, toggleTheme }) {
   // ══════════════════════════════════════════════
   return (
     <div className="app-shell">
-      <ValidationToast message={validationError} />
+      <ValidationToast message={toastMessage} kind={toastKind} />
 
       <div className="app-desktop">
         <aside className="sidebar">
@@ -401,6 +433,7 @@ export default function Dashboard({ user, theme, toggleTheme }) {
                 deleteRow={deleteRow} saveRowEdit={saveRowEdit}
                 selectedMonth={selectedMonth}
                 setAddingTo={setAddingTo} addingTo={addingTo}
+                onSuccessNotify={notifySuccess}
               />
               <FixedExpenses {...fixedExpensesProps} />
               <IncomeTable
