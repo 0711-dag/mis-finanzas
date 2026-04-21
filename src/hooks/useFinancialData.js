@@ -3,7 +3,7 @@
 // Carga, guarda y gestiona todo el CRUD
 // + Auto-generación de pagos recurrentes
 // + Presupuesto, metas de ahorro, pagos extra a deudas
-// + Categorías personalizadas (custom)
+// + Categorías personalizadas (custom) — 🆕 con campo tipoGasto
 // ══════════════════════════════════════════════
 import { useState, useEffect, useCallback, useRef } from "react";
 import { db, ref, onValue } from "../firebase.js";
@@ -39,7 +39,7 @@ const emptyData = () => ({
   savingsGoals: [],
   savingsDeposits: [],
   debtPayments: [],
-  customCategories: [], // 🆕 categorías personalizadas del usuario
+  customCategories: [], // categorías personalizadas del usuario
 });
 
 /**
@@ -650,12 +650,14 @@ export default function useFinancialData(user) {
 
   // ══════════════════════════════════════════════
   // 🆕 CATEGORÍAS PERSONALIZADAS (custom)
+  //   — ahora globales + soportan tipoGasto (CF/CV/Discrecional)
   // ══════════════════════════════════════════════
 
   /**
    * Añade una categoría custom.
-   * Si ya existe una con el mismo label (emoji + nombre) para ese tipo,
-   * devuelve false con aviso — no duplicamos.
+   * Si ya existe otra con el mismo label (emoji + nombre), devuelve false.
+   * A diferencia del código anterior, el duplicado se evalúa a nivel GLOBAL
+   * (sin filtrar por tipo), porque las categorías ahora son únicas.
    */
   const addCategory = useCallback(
     (cat) => {
@@ -673,9 +675,9 @@ export default function useFinancialData(user) {
       const emoji = clean.emoji || "📦";
       const newLabel = `${emoji} ${clean.nombre}`;
 
-      // Evitar duplicados por label dentro del mismo tipo
+      // Evitar duplicados por label a nivel GLOBAL
       const duplicado = (data.customCategories || []).some(
-        (c) => c.tipo === clean.tipo && `${c.emoji || "📦"} ${c.nombre}` === newLabel
+        (c) => `${c.emoji || "📦"} ${c.nombre}` === newLabel
       );
       if (duplicado) {
         setValidationError("Ya existe una categoría con ese nombre");
@@ -688,9 +690,10 @@ export default function useFinancialData(user) {
           ...(data.customCategories || []),
           {
             id: genId(),
-            tipo: clean.tipo,
+            tipo: clean.tipo || "any",   // "any" por defecto (globales)
             nombre: clean.nombre,
             emoji,
+            tipoGasto: clean.tipoGasto || "", // vacío = se inferirá
             createdAt: Date.now(),
           },
         ],
@@ -702,7 +705,7 @@ export default function useFinancialData(user) {
   );
 
   /**
-   * Edita una categoría custom existente (nombre y/o emoji).
+   * Edita una categoría custom existente (nombre, emoji y/o tipoGasto).
    */
   const updateCategory = useCallback(
     (id, fields) => {
@@ -711,9 +714,10 @@ export default function useFinancialData(user) {
       if (!existing) return false;
 
       const merged = {
-        tipo: existing.tipo,
+        tipo: existing.tipo || "any",
         nombre: fields.nombre !== undefined ? fields.nombre : existing.nombre,
         emoji: fields.emoji !== undefined ? fields.emoji : existing.emoji,
+        tipoGasto: fields.tipoGasto !== undefined ? fields.tipoGasto : (existing.tipoGasto || ""),
       };
       const validation = validateCustomCategory(merged);
       if (!validation.valid) {
@@ -726,7 +730,12 @@ export default function useFinancialData(user) {
         ...data,
         customCategories: data.customCategories.map((c) =>
           c.id === id
-            ? { ...c, nombre: clean.nombre, emoji: clean.emoji || "📦" }
+            ? {
+                ...c,
+                nombre: clean.nombre,
+                emoji: clean.emoji || "📦",
+                tipoGasto: clean.tipoGasto || "",
+              }
             : c
         ),
       });
@@ -792,7 +801,7 @@ export default function useFinancialData(user) {
     deleteGoal,
     addDeposit,
     deleteDeposit,
-    // 🆕 Categorías personalizadas
+    // Categorías personalizadas
     addCategory,
     updateCategory,
     deleteCategory,
