@@ -1,10 +1,46 @@
 // ══════════════════════════════════════════════
 // ☁️ Indicador de sincronización (minimalista)
+// ──────────────────────────────────────────────
+// Dos variantes:
+//   - default: usado en la sidebar de escritorio. Botón ancho con
+//     dot + texto + tooltip de "última sincronización".
+//   - compact: usado en el header móvil. Sólo el dot, accesible vía
+//     `title` y `aria-label`. Ocupa muy poco para no robar espacio.
+//
+// Los estilos compactos se inyectan en <head> la primera vez que se
+// monta el componente, para no tocar global.css.
 // ══════════════════════════════════════════════
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-export default function SyncIndicator({ syncing, online, lastSyncTime }) {
+const STYLES_ID = "sync-indicator-compact-styles";
+const STYLES = `
+/* Versión compacta del dot, usada en headers donde no hay espacio
+   para el botón completo. Hereda los colores de .sync-dot--{variant}
+   ya definidos en global.css. */
+.sync-dot-compact {
+  display: inline-block;
+  flex-shrink: 0;
+  /* Pequeño "halo" para que el dot no se pierda contra el fondo. */
+  outline: 3px solid var(--bg-elevated);
+  outline-offset: 0;
+  /* Garantiza tamaño consistente aunque cambie el contexto. */
+  width: 10px;
+  height: 10px;
+}
+`;
+
+function injectStylesOnce() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById(STYLES_ID)) return;
+  const style = document.createElement("style");
+  style.id = STYLES_ID;
+  style.textContent = STYLES;
+  document.head.appendChild(style);
+}
+
+export default function SyncIndicator({ syncing, online, lastSyncTime, compact = false }) {
   const [showTooltip, setShowTooltip] = useState(false);
+  useEffect(() => { injectStylesOnce(); }, []);
 
   let dotClass = "sync-dot sync-dot--online";
   let label = "Sincronizado";
@@ -23,6 +59,22 @@ export default function SyncIndicator({ syncing, online, lastSyncTime }) {
     });
   };
 
+  // ── Variante compacta para móvil ─────────────────────────────────
+  if (compact) {
+    const tooltipText = lastSyncTime && !syncing
+      ? `${label} · Última: ${formatFull(lastSyncTime)}`
+      : label;
+    return (
+      <span
+        className={`sync-dot-compact ${dotClass}`}
+        title={tooltipText}
+        aria-label={tooltipText}
+        role="status"
+      />
+    );
+  }
+
+  // ── Variante completa para sidebar de escritorio ─────────────────
   return (
     <button
       className="nav-item"
