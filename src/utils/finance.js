@@ -3,6 +3,7 @@
 // Métricas del hogar: ahorro, endeudamiento, deudas,
 // presupuestos y metas.
 // ══════════════════════════════════════════════
+import { normalizeCategoryLabel } from "./categoryDefaults.js";
 
 /**
  * Redondea a 2 decimales (evita "0.1 + 0.2 = 0.30000000000000004").
@@ -192,27 +193,44 @@ const TIPO_GASTO = {
   DISCRECIONAL: "Discrecional",
 };
 
-// Mapa de categoría → tipo de gasto para GASTOS FIJOS.
-// Se evalúa comparando el nombre de la categoría (puede venir con emoji delante).
-const FIXED_CATEGORY_TO_TIPO = {
+// 🆕 MAPA UNIFICADO de categoría → tipo de gasto.
+// Antes había dos mapas separados (FIXED_/VARIABLE_), ahora es uno solo
+// porque la lista de categorías también es única.
+// Se evalúa comparando el nombre de la categoría (sin emoji delante).
+const CATEGORY_TO_TIPO = {
   "Vivienda": TIPO_GASTO.CF,
   "Seguros": TIPO_GASTO.CF,
   "Educación": TIPO_GASTO.CF,
   "Servicios": TIPO_GASTO.CV,
-  "Transporte": TIPO_GASTO.CV,
-  "Suscripciones": TIPO_GASTO.DISCRECIONAL,
-};
-
-// Mapa de categoría → tipo de gasto para GASTOS VARIABLES.
-const VARIABLE_CATEGORY_TO_TIPO = {
   "Supermercado": TIPO_GASTO.CV,
   "Transporte": TIPO_GASTO.CV,
   "Salud": TIPO_GASTO.CV,
-  "Hogar": TIPO_GASTO.CV,
   "Restaurantes": TIPO_GASTO.DISCRECIONAL,
   "Ropa": TIPO_GASTO.DISCRECIONAL,
   "Ocio": TIPO_GASTO.DISCRECIONAL,
+  "Suscripciones": TIPO_GASTO.DISCRECIONAL,
+  // "Otros" deliberadamente sin mapear: usa el fallback por origen.
 };
+
+/**
+ * Busca el tipoGasto declarado por una categoría custom.
+ * Devuelve null si no hay match o si la custom no tiene tipoGasto definido.
+ */
+function lookupCustomTipo(categoria, customCategories) {
+  if (!categoria || !customCategories || customCategories.length === 0) return null;
+  // La categoría en el gasto puede estar "normalizada" (migrada) o no;
+  // probamos ambas.
+  const label = categoria;
+  const labelNorm = normalizeCategoryLabel(categoria);
+  for (const c of customCategories) {
+    const emoji = c.emoji || "📦";
+    const cLabel = `${emoji} ${c.nombre}`;
+    if (cLabel === label || cLabel === labelNorm) {
+      return c.tipoGasto || null;
+    }
+  }
+  return null;
+}
 
 /**
  * Extrae la palabra significativa de una categoría tipo "🛒 Supermercado".
@@ -230,37 +248,42 @@ function extractCategoryName(categoria) {
 
 /**
  * Infiere el tipo de gasto (CF / CV / Discrecional) para un gasto concreto.
- * Si el gasto ya tiene el campo `tipoGasto` definido, lo respeta.
- * Si no, aplica la heurística por categoría + origen.
+ * Orden de prioridad:
+ *  1. Si el gasto ya tiene `tipoGasto` definido → se respeta.
+ *  2. Si la categoría es custom y tiene `tipoGasto` → se usa ese.
+ *  3. Deudas → siempre CF.
+ *  4. Mapa unificado por nombre de categoría (default).
+ *  5. Fallback conservador según origen (fixed→CF, variable→CV, manual→CV).
  *
  * @param {object} gasto - objeto con { categoria, tipoGasto?, ... }
  * @param {"fixed"|"variable"|"debt"|"manual"} origen
+ * @param {Array} [customCategories] - lista de data.customCategories, opcional
  * @returns {"CF"|"CV"|"Discrecional"}
  */
-function inferTipoGasto(gasto, origen) {
-  // 1. Si ya está clasificado manualmente, respeta
+function inferTipoGasto(gasto, origen, customCategories) {
+  // 1. Si el gasto concreto ya está clasificado manualmente, respeta.
   if (gasto?.tipoGasto && Object.values(TIPO_GASTO).includes(gasto.tipoGasto)) {
     return gasto.tipoGasto;
   }
 
-  // 2. Deudas: siempre CF
+  // 2. Deudas: siempre CF (independiente de categoría)
   if (origen === "debt") return TIPO_GASTO.CF;
 
-  // 3. Por categoría
+  // 3. Si es una categoría custom con tipoGasto declarado, úsalo.
+  const fromCustom = lookupCustomTipo(gasto?.categoria, customCategories);
+  if (fromCustom && Object.values(TIPO_GASTO).includes(fromCustom)) {
+    return fromCustom;
+  }
+
+  // 4. Mapa unificado por nombre (default).
   const catName = extractCategoryName(gasto?.categoria);
+  const fromMap = CATEGORY_TO_TIPO[catName];
+  if (fromMap) return fromMap;
 
-  if (origen === "fixed") {
-    // Fallback conservador: si es gasto fijo sin categoría reconocible, se asume CF
-    return FIXED_CATEGORY_TO_TIPO[catName] || TIPO_GASTO.CF;
-  }
-
-  if (origen === "variable") {
-    // Fallback conservador: si es gasto variable sin categoría reconocible, se asume CV
-    return VARIABLE_CATEGORY_TO_TIPO[catName] || TIPO_GASTO.CV;
-  }
-
-  // 4. Pagos manuales sin origen: CV (gasto puntual necesario)
-  return TIPO_GASTO.CV;
+  // 5. Fallback por origen — comportamiento conservador histórico.
+  if (origen === "fixed") return TIPO_GASTO.CF;
+  if (origen === "variable") return TIPO_GASTO.CV;
+  return TIPO_GASTO.CV; // pagos manuales
 }
 
 /**
@@ -292,8 +315,9 @@ function calcExpenseBreakdown(data, cycleMK) {
   let cv = 0;
   let discrecional = 0;
 
-  // Gastos fijos: buscamos los pagos del ciclo con fixedExpenseId
-  // y recuperamos la categoría desde el fixedExpense original.
+  const customCategories = data.customCategories || [];
+
+  // Mapa de gastos fijos por id para recuperar su categoría
   const fixedExpensesById = {};
   (data.fixedExpenses || []).forEach((f) => {
     fixedExpensesById[f.id] = f;
@@ -313,7 +337,7 @@ function calcExpenseBreakdown(data, cycleMK) {
     if (p.fixedExpenseId) {
       // Pago de gasto fijo → buscar categoría y clasificar
       const fixed = fixedExpensesById[p.fixedExpenseId];
-      const tipo = inferTipoGasto(fixed || p, "fixed");
+      const tipo = inferTipoGasto(fixed || p, "fixed", customCategories);
       if (tipo === TIPO_GASTO.CF) cf += monto;
       else if (tipo === TIPO_GASTO.DISCRECIONAL) discrecional += monto;
       else cv += monto;
@@ -331,7 +355,7 @@ function calcExpenseBreakdown(data, cycleMK) {
 
   for (const v of variableExpenses) {
     const monto = Number(v.monto) || 0;
-    const tipo = inferTipoGasto(v, "variable");
+    const tipo = inferTipoGasto(v, "variable", customCategories);
     if (tipo === TIPO_GASTO.DISCRECIONAL) discrecional += monto;
     else if (tipo === TIPO_GASTO.CF) cf += monto;
     else cv += monto;
@@ -401,6 +425,8 @@ function calcExpenseBreakdownDetailed(data, cycleMK) {
   let cuotasPagado = 0, cuotasTotal = 0;
   let manualesPagado = 0, manualesTotal = 0;
 
+  const customCategories = data.customCategories || [];
+
   // Mapa de gastos fijos por id para poder recuperar su categoría
   const fixedExpensesById = {};
   (data.fixedExpenses || []).forEach((f) => {
@@ -435,7 +461,7 @@ function calcExpenseBreakdownDetailed(data, cycleMK) {
 
     if (p.fixedExpenseId) {
       const fixed = fixedExpensesById[p.fixedExpenseId];
-      const tipo = inferTipoGasto(fixed || p, "fixed");
+      const tipo = inferTipoGasto(fixed || p, "fixed", customCategories);
       if (tipo === TIPO_GASTO.CF) {
         cfTotal += monto;
         if (estaPagado) cfExec += monto;
@@ -461,7 +487,7 @@ function calcExpenseBreakdownDetailed(data, cycleMK) {
 
   for (const v of variableExpenses) {
     const monto = Number(v.monto) || 0;
-    const tipo = inferTipoGasto(v, "variable");
+    const tipo = inferTipoGasto(v, "variable", customCategories);
     if (tipo === TIPO_GASTO.DISCRECIONAL) {
       dscTotal += monto;
       dscExec += monto;
@@ -624,11 +650,11 @@ export {
   calcGoalProgress,
   suggestEmergencyFund,
   calcMonthlyTarget,
-  // 🆕 Clasificación CF / CV / Discrecional
+  // Clasificación CF / CV / Discrecional
   TIPO_GASTO,
   inferTipoGasto,
   calcExpenseBreakdown,
-  // 🆕 Desglose detallado con separación "Ejecutado" vs "Total"
-  //     y progreso del calendario por origen
+  // Desglose detallado con separación "Ejecutado" vs "Total"
+  // y progreso del calendario por origen
   calcExpenseBreakdownDetailed,
 };
