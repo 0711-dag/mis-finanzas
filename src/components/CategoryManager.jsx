@@ -1,16 +1,12 @@
 // ══════════════════════════════════════════════
 // 🏷️ CategoryManager
 // Modal para gestionar categorías custom.
-// Las categorías custom son GLOBALES: se ven en todas las secciones.
-// Las default se listan por tipo (fijos / variables) y están bloqueadas.
-// La prop `tipo` determina el tipo con el que se guardará una nueva
-// categoría custom, pero una vez creada estará disponible en todos lados.
+// 🆕 Las categorías son GLOBALES: una sola lista unificada de defaults,
+// y al crear/editar una custom el usuario elige su clasificación
+// contable (CF / CV / Discrecional) que alimenta el panel financiero.
 // ══════════════════════════════════════════════
 import { useState } from "react";
-import {
-  DEFAULT_FIXED_CATEGORIES,
-  DEFAULT_VARIABLE_CATEGORIES,
-} from "../utils/categoryDefaults.js";
+import { DEFAULT_CATEGORIES } from "../utils/categoryDefaults.js";
 
 // Sugerencias de emojis rápidos para el picker simplificado
 const EMOJI_SUGERIDOS = [
@@ -19,8 +15,17 @@ const EMOJI_SUGERIDOS = [
   "📱", "💻", "🚿", "🧴", "🎯", "⭐", "❤️", "🔥",
 ];
 
+// 🆕 Opciones de tipo de gasto que el usuario puede asignar a su categoría.
+// "" significa "auto" → se infiere por nombre o fallback por origen.
+const TIPO_GASTO_OPCIONES = [
+  { value: "",             label: "Auto",         hint: "Inferir por contexto" },
+  { value: "CF",           label: "CF",           hint: "Costo fijo" },
+  { value: "CV",           label: "CV",           hint: "Costo variable" },
+  { value: "Discrecional", label: "Discrecional", hint: "Opcional, reducible" },
+];
+
 export default function CategoryManager({
-  tipo,             // "fixed" | "variable" — tipo con el que se guardarán nuevas
+  tipo,             // compatibilidad: "fixed" | "variable" — ahora ignorado al crear
   customCategories, // array completo de data.customCategories
   onAdd,            // (cat) => boolean
   onUpdate,         // (id, fields) => boolean
@@ -35,11 +40,13 @@ export default function CategoryManager({
   const [showAddForm, setShowAddForm] = useState(false);
   const [newNombre, setNewNombre] = useState("");
   const [newEmoji, setNewEmoji] = useState("📦");
+  const [newTipoGasto, setNewTipoGasto] = useState(""); // "" = auto
 
   // Estado de edición
   const [editingId, setEditingId] = useState(null);
   const [editNombre, setEditNombre] = useState("");
   const [editEmoji, setEditEmoji] = useState("");
+  const [editTipoGasto, setEditTipoGasto] = useState(""); // "" = auto
 
   // Estado de confirmación de borrado
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -48,12 +55,19 @@ export default function CategoryManager({
     setShowAddForm(false);
     setNewNombre("");
     setNewEmoji("📦");
+    setNewTipoGasto("");
   };
 
   const handleAdd = () => {
-    // Se guarda con el `tipo` del contexto donde se crea, pero al ser
-    // las custom globales da igual desde dónde la crees: la verás en todas.
-    const ok = onAdd({ tipo, nombre: newNombre, emoji: newEmoji });
+    // 🆕 Se guarda con tipo "any" (global). Si el padre aún pasa "fixed"/"variable"
+    // se respeta por compatibilidad, pero el default es "any".
+    const tipoFinal = tipo || "any";
+    const ok = onAdd({
+      tipo: tipoFinal,
+      nombre: newNombre,
+      emoji: newEmoji,
+      tipoGasto: newTipoGasto, // "" si quiere inferencia automática
+    });
     if (ok) resetAddForm();
   };
 
@@ -61,15 +75,21 @@ export default function CategoryManager({
     setEditingId(cat.id);
     setEditNombre(cat.nombre);
     setEditEmoji(cat.emoji || "📦");
+    setEditTipoGasto(cat.tipoGasto || "");
     setConfirmDeleteId(null);
   };
 
   const handleSaveEdit = () => {
-    const ok = onUpdate(editingId, { nombre: editNombre, emoji: editEmoji });
+    const ok = onUpdate(editingId, {
+      nombre: editNombre,
+      emoji: editEmoji,
+      tipoGasto: editTipoGasto,
+    });
     if (ok) {
       setEditingId(null);
       setEditNombre("");
       setEditEmoji("");
+      setEditTipoGasto("");
     }
   };
 
@@ -77,6 +97,7 @@ export default function CategoryManager({
     setEditingId(null);
     setEditNombre("");
     setEditEmoji("");
+    setEditTipoGasto("");
   };
 
   const handleConfirmDelete = (id) => {
@@ -86,42 +107,50 @@ export default function CategoryManager({
 
   const tituloFinal = title || "Mis categorías";
 
-  // Bloque reutilizable para un grupo de defaults
-  const DefaultsBlock = ({ label, items }) => (
-    <div style={{ marginBottom: 14 }}>
+  // Selector compacto de tipo de gasto (segmented control pequeño)
+  const TipoGastoSelector = ({ value, onChange }) => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{
         fontSize: 10,
-        fontWeight: 700,
         color: "var(--text-tertiary)",
+        fontWeight: 600,
         textTransform: "uppercase",
-        letterSpacing: 0.06,
-        marginBottom: 6,
+        letterSpacing: 0.5,
       }}>
-        {label}
+        Clasificación contable
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        {items.map((it) => (
-          <div
-            key={it}
-            style={{
-              padding: "10px 12px",
-              background: "var(--bg-surface)",
-              borderRadius: "var(--radius-sm)",
-              border: "1px solid var(--border-subtle)",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              fontSize: 13,
-              color: "var(--text-primary)",
-              fontWeight: 500,
-            }}
-          >
-            <span>{it}</span>
-            <span style={{ fontSize: 12, color: "var(--text-tertiary)" }} title="Categoría por defecto">
-              🔒
-            </span>
-          </div>
-        ))}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(4, 1fr)",
+        gap: 4,
+      }}>
+        {TIPO_GASTO_OPCIONES.map((opt) => {
+          const activo = value === opt.value;
+          return (
+            <button
+              key={opt.value || "auto"}
+              type="button"
+              onClick={() => onChange(opt.value)}
+              title={opt.hint}
+              style={{
+                padding: "8px 4px",
+                borderRadius: "var(--radius-sm)",
+                background: activo ? "var(--accent)" : "var(--bg-surface)",
+                color: activo ? "white" : "var(--text-primary)",
+                border: `1px solid ${activo ? "var(--accent)" : "var(--border-subtle)"}`,
+                cursor: "pointer",
+                fontSize: 11,
+                fontWeight: 700,
+                transition: "background var(--anim-fast)",
+              }}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ fontSize: 10, color: "var(--text-tertiary)", lineHeight: 1.4 }}>
+        💡 "Auto" deja que la app clasifique según el nombre. Elige CF/CV/Discrecional para forzarlo.
       </div>
     </div>
   );
@@ -144,7 +173,7 @@ export default function CategoryManager({
             marginBottom: 14,
             lineHeight: 1.5,
           }}>
-            Las categorías que crees aquí estarán disponibles en todas las secciones (gastos fijos y variables). Las categorías por defecto (🔒) no se pueden eliminar.
+            Una misma lista de categorías para todo: gastos fijos, variables, presupuestos e informes. Las categorías por defecto (🔒) no se pueden eliminar; puedes añadir las tuyas con el botón de abajo.
           </div>
 
           {/* Botón añadir nueva */}
@@ -243,6 +272,9 @@ export default function CategoryManager({
                 ))}
               </div>
 
+              {/* 🆕 Selector de clasificación contable */}
+              <TipoGastoSelector value={newTipoGasto} onChange={setNewTipoGasto} />
+
               {/* Acciones */}
               <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
                 <button
@@ -290,6 +322,7 @@ export default function CategoryManager({
                 const isEditing = editingId === cat.id;
                 const isConfirmingDelete = confirmDeleteId === cat.id;
                 const emoji = cat.emoji || "📦";
+                const tipoGastoActual = cat.tipoGasto || "";
 
                 if (isEditing) {
                   return (
@@ -302,7 +335,7 @@ export default function CategoryManager({
                         border: "1.5px solid var(--accent)",
                         display: "flex",
                         flexDirection: "column",
-                        gap: 6,
+                        gap: 8,
                       }}
                     >
                       <div style={{ display: "flex", gap: 6 }}>
@@ -322,6 +355,10 @@ export default function CategoryManager({
                           autoFocus
                         />
                       </div>
+
+                      {/* 🆕 Selector de clasificación contable en edición */}
+                      <TipoGastoSelector value={editTipoGasto} onChange={setEditTipoGasto} />
+
                       <div style={{ display: "flex", gap: 6 }}>
                         <button
                           className="btn-primary btn-primary--accent"
@@ -362,8 +399,27 @@ export default function CategoryManager({
                       whiteSpace: "nowrap",
                       minWidth: 0,
                       flex: 1,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
                     }}>
-                      {emoji} {cat.nombre}
+                      <span>{emoji} {cat.nombre}</span>
+                      {/* 🆕 Chip compacto del tipoGasto actual, si está definido */}
+                      {tipoGastoActual && (
+                        <span style={{
+                          fontSize: 9,
+                          fontWeight: 700,
+                          padding: "2px 6px",
+                          borderRadius: 4,
+                          background: "var(--bg-subtle)",
+                          color: "var(--text-tertiary)",
+                          letterSpacing: 0.4,
+                          textTransform: "uppercase",
+                          flexShrink: 0,
+                        }}>
+                          {tipoGastoActual}
+                        </span>
+                      )}
                     </span>
 
                     <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
@@ -409,15 +465,43 @@ export default function CategoryManager({
             </div>
           )}
 
-          {/* Defaults agrupadas por tipo */}
-          <DefaultsBlock
-            label="Por defecto · gastos fijos"
-            items={DEFAULT_FIXED_CATEGORIES}
-          />
-          <DefaultsBlock
-            label="Por defecto · gastos variables"
-            items={DEFAULT_VARIABLE_CATEGORIES}
-          />
+          {/* 🆕 Bloque único de defaults (antes eran dos: fijos + variables) */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: "var(--text-tertiary)",
+              textTransform: "uppercase",
+              letterSpacing: 0.06,
+              marginBottom: 6,
+            }}>
+              Por defecto
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {DEFAULT_CATEGORIES.map((it) => (
+                <div
+                  key={it}
+                  style={{
+                    padding: "10px 12px",
+                    background: "var(--bg-surface)",
+                    borderRadius: "var(--radius-sm)",
+                    border: "1px solid var(--border-subtle)",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    fontSize: 13,
+                    color: "var(--text-primary)",
+                    fontWeight: 500,
+                  }}
+                >
+                  <span>{it}</span>
+                  <span style={{ fontSize: 12, color: "var(--text-tertiary)" }} title="Categoría por defecto">
+                    🔒
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
 
           {/* Nota al pie */}
           <div style={{
@@ -429,7 +513,7 @@ export default function CategoryManager({
             background: "var(--bg-subtle)",
             borderRadius: "var(--radius-sm)",
           }}>
-            💡 Tus categorías funcionan como globales: aparecen tanto en gastos fijos como en variables. Las categorías por defecto siguen separadas por contexto.
+            💡 Todas las categorías (por defecto y tuyas) están disponibles en gastos fijos, variables, presupuestos e informes.
           </div>
         </div>
       </div>
