@@ -1,3 +1,7 @@
+// ══════════════════════════════════════════════
+// 🛒 Gastos variables
+// v2: categoría referenciada por categoryId en data.categories.
+// ══════════════════════════════════════════════
 import { useState } from "react";
 import Section from "./Section.jsx";
 import ActionButtons from "./shared/ActionButtons.jsx";
@@ -7,6 +11,7 @@ import useCategories from "../hooks/useCategories.js";
 import { fmt, fmtDate, todayISO, formatMonthLabel } from "../utils/format.js";
 import { dateToFinancialMonth } from "../utils/cycle.js";
 import { calcBudgetUsage } from "../utils/finance.js";
+import { buildCategoryLabel } from "../utils/categoryDefaults.js";
 
 export default function VariableExpenses({
   filteredVarExpenses,
@@ -17,13 +22,11 @@ export default function VariableExpenses({
   setAddingTo,
   addingTo,
   mobileMode,
-  // Props para presupuesto
   data,
   addOrUpdateBudget,
   removeBudget,
   copyBudgetsFromPrevCycle,
   getPrevCycle,
-  // 🆕 CRUD de categorías custom (opcional: si no llega, se oculta el botón de gestión)
   addCategory,
   updateCategory,
   deleteCategory,
@@ -35,19 +38,22 @@ export default function VariableExpenses({
 
   const total = filteredVarExpenses.reduce((s, v) => s + (v.monto || 0), 0);
 
-  // 🆕 Lista unificada de categorías (defaults + custom del usuario)
-  const { categories } = useCategories("variable", data?.customCategories);
+  // 🆕 v2
+  const { items, findById } = useCategories("variable", data?.categories, data?.customCategories);
 
-  // Indica si están disponibles las funciones de gestión (para enseñar el botón)
   const canManageCategories = typeof addCategory === "function";
 
-  // Calcular estado del presupuesto global (para el chip de la cabecera)
+  // Estado del presupuesto global (chip en cabecera). Pasamos categories al cálculo.
   const budgets = data?.budgets || [];
-  const usage = calcBudgetUsage(budgets, data?.variableExpenses || [], selectedMonth);
+  const usage = calcBudgetUsage(
+    budgets,
+    data?.variableExpenses || [],
+    selectedMonth,
+    data?.categories || []
+  );
   const hayPresupuesto = usage.totalPresupuestado > 0;
   const pctGlobal = hayPresupuesto ? (usage.totalGastado / usage.totalPresupuestado) * 100 : 0;
 
-  // Color del chip según estado global
   const chipColor = pctGlobal >= 100 ? "danger"
     : pctGlobal >= 80 ? "warning"
     : "success";
@@ -57,7 +63,6 @@ export default function VariableExpenses({
     warning: "var(--warning-bg)",
     danger: "var(--danger-bg)",
   }[chipColor];
-
   const chipText = {
     success: "var(--success-text)",
     warning: "var(--warning-text)",
@@ -68,7 +73,12 @@ export default function VariableExpenses({
   const cancelRowEdit = () => setEditingRow(null);
   const handleSaveRowEdit = () => {
     if (!editingRow) return;
-    saveRowEdit("variableExpenses", editingRow.id, editingRow.fields);
+    const catObj = findById(editingRow.fields.categoryId);
+    const fields = {
+      ...editingRow.fields,
+      categoria: catObj ? buildCategoryLabel(catObj) : (editingRow.fields.categoria || ""),
+    };
+    saveRowEdit("variableExpenses", editingRow.id, fields);
     setEditingRow(null);
   };
   const isRowEditing = (id) => editingRow?.id === id;
@@ -78,21 +88,22 @@ export default function VariableExpenses({
 
   const handleAdd = () => {
     setAddingTo("variableExpenses");
-    setNewRow({ concepto: "", monto: "", fecha: todayISO(), categoria: "" });
+    setNewRow({ concepto: "", monto: "", fecha: todayISO(), categoryId: "" });
   };
 
   const handleSaveNew = () => {
+    const catObj = findById(newRow.categoryId);
     const success = addRow("variableExpenses", {
       concepto: newRow.concepto,
       monto: parseFloat(newRow.monto) || 0,
       fecha: newRow.fecha,
       month: dateToFinancialMonth(newRow.fecha) || selectedMonth,
-      categoria: newRow.categoria || "",
+      categoryId: newRow.categoryId || "",
+      categoria: catObj ? buildCategoryLabel(catObj) : "",
     });
     if (success) setAddingTo(null);
   };
 
-  // Selector de categoría reutilizable + botón de gestión
   const CategorySelector = ({ value, onChange }) => (
     <div style={{ display: "flex", gap: 6 }}>
       <select
@@ -102,7 +113,7 @@ export default function VariableExpenses({
         style={{ flex: 1 }}
       >
         <option value="">— Categoría —</option>
-        {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+        {items.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
       </select>
       {canManageCategories && (
         <button
@@ -142,8 +153,8 @@ export default function VariableExpenses({
       </div>
 
       <CategorySelector
-        value={newRow.categoria}
-        onChange={(v) => setNewRow({ ...newRow, categoria: v })}
+        value={newRow.categoryId}
+        onChange={(v) => setNewRow({ ...newRow, categoryId: v })}
       />
 
       <button className="btn-primary btn-primary--accent" onClick={handleSaveNew} style={{ marginTop: 4 }}>
@@ -152,9 +163,21 @@ export default function VariableExpenses({
     </div>
   );
 
+  // Helper: display de categoría en la fila (emoji + nombre actualizados)
+  const getDisplayCat = (v) => {
+    const cat = findById(v.categoryId);
+    if (cat) return { emoji: cat.emoji || "📦", text: cat.nombre };
+    if (v.categoria) {
+      return {
+        emoji: v.categoria.split(" ")[0] || "📦",
+        text: v.categoria.replace(/^[^\s]+\s/, "") || "Sin categoría",
+      };
+    }
+    return { emoji: "📦", text: "Sin categoría" };
+  };
+
   return (
     <Section title={`Gastos variables · ${formatMonthLabel(selectedMonth)}`} icon="🛒" onAdd={handleAdd} mobileMode={mobileMode}>
-      {/* Toggle de presupuesto: botón siempre visible con resumen si existe */}
       <button
         onClick={() => setShowBudget(!showBudget)}
         style={{
@@ -165,13 +188,9 @@ export default function VariableExpenses({
           color: hayPresupuesto ? chipText : "var(--text-secondary)",
           border: "1px solid var(--border-subtle)",
           borderRadius: "var(--radius-md)",
-          fontSize: 12,
-          fontWeight: 600,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          cursor: "pointer",
-          textAlign: "left",
+          fontSize: 12, fontWeight: 600,
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          cursor: "pointer", textAlign: "left",
         }}
       >
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -182,12 +201,9 @@ export default function VariableExpenses({
               : "Definir presupuesto"}
           </span>
         </span>
-        <span style={{ fontSize: 14 }}>
-          {showBudget ? "▲" : "▼"}
-        </span>
+        <span style={{ fontSize: 14 }}>{showBudget ? "▲" : "▼"}</span>
       </button>
 
-      {/* Panel de presupuesto desplegable */}
       {showBudget && addOrUpdateBudget && (
         <BudgetPanel
           budgets={budgets}
@@ -197,9 +213,9 @@ export default function VariableExpenses({
           removeBudget={removeBudget}
           copyBudgetsFromPrevCycle={copyBudgetsFromPrevCycle}
           getPrevCycle={getPrevCycle}
-          // 🆕 Pasamos la lista unificada para que el selector de "nuevo presupuesto"
-          // incluya también las categorías custom del usuario
-          allCategories={categories}
+          // 🆕 v2: pasamos items (objetos) en vez de strings
+          allCategoryItems={items}
+          categories={data?.categories || []}
         />
       )}
 
@@ -208,8 +224,7 @@ export default function VariableExpenses({
       <div className="item-list">
         {filteredVarExpenses.map((v) => {
           const re = isRowEditing(v.id);
-          const catEmoji = v.categoria?.split(" ")[0] || "📦";
-          const catText = v.categoria?.replace(/^[^\s]+\s/, "") || "Sin categoría";
+          const { emoji: catEmoji, text: catText } = getDisplayCat(v);
 
           if (re) {
             return (
@@ -225,8 +240,8 @@ export default function VariableExpenses({
                 </div>
 
                 <CategorySelector
-                  value={rowField("categoria")}
-                  onChange={(v) => setRowField("categoria", v)}
+                  value={rowField("categoryId")}
+                  onChange={(v) => setRowField("categoryId", v)}
                 />
 
                 <div style={{ display: "flex", gap: 6 }}>
@@ -281,11 +296,9 @@ export default function VariableExpenses({
         </div>
       )}
 
-      {/* 🆕 Modal de gestión de categorías */}
       {showCategoryManager && canManageCategories && (
         <CategoryManager
-          tipo="variable"
-          customCategories={data?.customCategories}
+          data={data}
           onAdd={addCategory}
           onUpdate={updateCategory}
           onDelete={deleteCategory}
