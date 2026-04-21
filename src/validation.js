@@ -64,6 +64,17 @@ function sanitizeInteger(value, max = LIMITS.MAX_CUOTAS) {
   return num;
 }
 
+// 🆕 Sanea fechas: si no es una "YYYY-MM-DD" válida, devuelve "" (nunca undefined).
+// Firebase Realtime Database rechaza objetos con propiedades undefined,
+// por lo que es CRÍTICO no dejar estos campos sin valor explícito.
+function sanitizeDateString(value) {
+  if (typeof value !== "string") return "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "";
+  return value;
+}
+
 function isValidDate(dateStr) {
   if (typeof dateStr !== "string") return false;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
@@ -96,6 +107,40 @@ function canAddMore(section, currentData) {
 }
 
 // ══════════════════════════════════════════════
+// 🆕 stripUndefined — Defensa en profundidad
+// ──────────────────────────────────────────────
+// Firebase Realtime Database lanza un error y aborta TODA la escritura
+// si encuentra cualquier propiedad con valor `undefined` en el árbol.
+// Esto incluye undefined dentro de objetos anidados o arrays.
+//
+// Esta función recorre recursivamente la estructura y elimina cualquier
+// undefined antes de pasársela a `set()`. Funciona sobre objetos y arrays
+// y preserva null, 0, "", false (que son valores válidos en Firebase).
+//
+// Es idempotente y segura sobre tipos primitivos.
+// ══════════════════════════════════════════════
+function stripUndefined(value) {
+  // Primitivos y null pasan tal cual
+  if (value === null) return null;
+  if (typeof value !== "object") return value;
+
+  // Arrays: limpiar cada elemento, manteniendo el orden
+  if (Array.isArray(value)) {
+    return value.map((item) => stripUndefined(item));
+  }
+
+  // Objetos: omitir claves con undefined, limpiar el resto
+  const out = {};
+  for (const key in value) {
+    if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+    const v = value[key];
+    if (v === undefined) continue;
+    out[key] = stripUndefined(v);
+  }
+  return out;
+}
+
+// ══════════════════════════════════════════════
 // VALIDADORES
 // ══════════════════════════════════════════════
 
@@ -111,7 +156,8 @@ function validateDebt(debt) {
     proxCuota: sanitizeAmount(debt.proxCuota),
     totalCuotas: sanitizeInteger(debt.totalCuotas),
     cuotaActual: sanitizeInteger(debt.cuotaActual),
-    fechaInicio: debt.fechaInicio,
+    // 🆕 Saneada: nunca undefined. "" si no es fecha válida.
+    fechaInicio: sanitizeDateString(debt.fechaInicio),
     limiteCredito: sanitizeAmount(debt.limiteCredito),
     pagoMinimo: sanitizeAmount(debt.pagoMinimo),
     tasaInteres: sanitizeAmount(debt.tasaInteres),
@@ -123,7 +169,7 @@ function validateDebt(debt) {
   if (tipo === "cuotas" || tipo === "prestamo") {
     if (clean.totalCuotas <= 0) errors.push("Debes indicar el número total de cuotas");
     if (clean.proxCuota <= 0) errors.push("La cuota mensual debe ser mayor que 0");
-    if (!isValidDate(clean.fechaInicio)) errors.push("La fecha de inicio no es válida");
+    if (!clean.fechaInicio) errors.push("La fecha de inicio no es válida");
   }
   if (tipo === "tarjeta") {
     if (clean.limiteCredito > 0 && clean.saldoPendiente > clean.limiteCredito) {
@@ -164,8 +210,9 @@ function validateIncome(income) {
   const clean = {
     concepto: sanitizeText(income.concepto),
     amount: sanitizeAmount(income.amount),
-    fecha: income.fecha,
-    month: income.month,
+    // 🆕 Saneada: nunca undefined.
+    fecha: sanitizeDateString(income.fecha),
+    month: typeof income.month === "string" ? income.month : "",
     titular: sanitizeText(income.titular, 30) || "yo",
     tipo,
   };
@@ -179,8 +226,9 @@ function validateVariableExpense(expense) {
   const clean = {
     concepto: sanitizeText(expense.concepto),
     monto: sanitizeAmount(expense.monto),
-    fecha: expense.fecha,
-    month: expense.month,
+    // 🆕 Saneada: nunca undefined.
+    fecha: sanitizeDateString(expense.fecha),
+    month: typeof expense.month === "string" ? expense.month : "",
     // 🆕 v2
     categoryId: sanitizeText(expense.categoryId || "", 40),
     categoria: normalizeCategoryLabel(sanitizeText(expense.categoria || "", 30)),
@@ -195,11 +243,13 @@ function validatePayment(payment) {
   const clean = {
     concepto: sanitizeText(payment.concepto),
     monto: sanitizeAmount(payment.monto),
-    dayPago: payment.dayPago,
+    // 🆕 Saneada: nunca undefined.
+    dayPago: sanitizeDateString(payment.dayPago),
     estado: ["PENDIENTE", "PAGADO"].includes(payment.estado) ? payment.estado : "PENDIENTE",
-    month: payment.month,
+    month: typeof payment.month === "string" ? payment.month : "",
     debtId: payment.debtId || "",
-    cuotaNum: payment.cuotaNum || null,
+    // cuotaNum se queda como null o número, nunca undefined
+    cuotaNum: payment.cuotaNum == null ? null : Number(payment.cuotaNum) || null,
     fixedExpenseId: payment.fixedExpenseId || "",
   };
   if (!clean.concepto) errors.push("Falta el concepto");
@@ -210,7 +260,7 @@ function validatePayment(payment) {
 function validateBudget(budget) {
   const errors = [];
   const clean = {
-    cycleMK: budget.cycleMK,
+    cycleMK: typeof budget.cycleMK === "string" ? budget.cycleMK : "",
     // 🆕 v2
     categoryId: sanitizeText(budget.categoryId || "", 40),
     categoria: normalizeCategoryLabel(sanitizeText(budget.categoria || "", 30)),
@@ -231,14 +281,14 @@ function validateSavingsGoal(goal) {
     nombre: sanitizeText(goal.nombre, 50),
     tipo,
     objetivo: sanitizeAmount(goal.objetivo),
-    fechaLimite: goal.fechaLimite || "",
+    // 🆕 Saneada: nunca undefined. "" si no hay fecha.
+    fechaLimite: sanitizeDateString(goal.fechaLimite),
     icono: sanitizeText(goal.icono, 4) || "🎯",
   };
   if (!clean.nombre) errors.push("Falta el nombre de la meta");
   if (clean.objetivo <= 0) errors.push("El objetivo debe ser mayor que 0");
-  if (clean.fechaLimite && !isValidDate(clean.fechaLimite)) {
-    errors.push("Fecha límite inválida");
-  }
+  // Nota: ya no validamos fechaLimite por separado: sanitizeDateString
+  // devuelve "" si era inválida. La interpretamos como "sin fecha".
   return { valid: errors.length === 0, errors, data: clean };
 }
 
@@ -247,13 +297,14 @@ function validateSavingsDeposit(deposit) {
   const clean = {
     goalId: sanitizeText(deposit.goalId, 50),
     monto: sanitizeAmount(deposit.monto),
-    fecha: deposit.fecha,
-    month: deposit.month,
+    // 🆕 Saneada: nunca undefined.
+    fecha: sanitizeDateString(deposit.fecha),
+    month: typeof deposit.month === "string" ? deposit.month : "",
     nota: sanitizeText(deposit.nota || "", 100),
   };
   if (!clean.goalId) errors.push("Meta no especificada");
   if (clean.monto <= 0) errors.push("El aporte debe ser mayor que 0");
-  if (!isValidDate(clean.fecha)) errors.push("Fecha inválida");
+  if (!clean.fecha) errors.push("Fecha inválida");
   return { valid: errors.length === 0, errors, data: clean };
 }
 
@@ -262,13 +313,14 @@ function validateDebtExtraPayment(payment) {
   const clean = {
     debtId: sanitizeText(payment.debtId, 50),
     monto: sanitizeAmount(payment.monto),
-    fecha: payment.fecha,
-    month: payment.month,
+    // 🆕 Saneada: nunca undefined.
+    fecha: sanitizeDateString(payment.fecha),
+    month: typeof payment.month === "string" ? payment.month : "",
     nota: sanitizeText(payment.nota || "", 100),
   };
   if (!clean.debtId) errors.push("Deuda no especificada");
   if (clean.monto <= 0) errors.push("El monto debe ser mayor que 0");
-  if (!isValidDate(clean.fecha)) errors.push("Fecha inválida");
+  if (!clean.fecha) errors.push("Fecha inválida");
   return { valid: errors.length === 0, errors, data: clean };
 }
 
@@ -434,10 +486,12 @@ export {
   sanitizeText,
   sanitizeAmount,
   sanitizeInteger,
+  sanitizeDateString,
   // Helpers
   isValidDate,
   isValidMonth,
   canAddMore,
+  stripUndefined,
   // Validadores
   validateDebt,
   validateFixedExpense,
