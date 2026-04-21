@@ -1,7 +1,9 @@
 // ══════════════════════════════════════════════
 // 🏷️ Hook useCategories
-// Fusiona las categorías por defecto del tipo indicado con TODAS las
-// categorías custom del usuario (globales, sin filtrar por tipo).
+// 🆕 LISTA ÚNICA UNIFICADA: ya no hay "categorías de fijos" y
+// "categorías de variables". Una sola lista sirve para todos los contextos.
+// El parámetro `tipo` se mantiene por compatibilidad con llamadas
+// existentes, pero se ignora.
 // Devuelve un array de strings "emoji Nombre" listo para usar
 // en un <select>.
 // ══════════════════════════════════════════════
@@ -19,22 +21,21 @@ function buildLabel(cat) {
 
 /**
  * Hook principal.
- * @param {"fixed" | "variable"} tipo - Determina qué defaults incluir.
- *   Las custom se incluyen TODAS, independientemente de su tipo original.
+ * @param {"fixed" | "variable" | "any"} _tipo - parámetro IGNORADO,
+ *   se mantiene por compatibilidad con llamadas existentes.
  * @param {Array} customCategories - array completo de `data.customCategories`.
  * @returns {{
- *   categories: string[],         // lista unificada para el <select>
- *   customOfType: Array,          // TODAS las custom (no filtradas por tipo)
- *   defaults: string[],           // solo las default del tipo (para bloquear borrado)
+ *   categories: string[],   // lista unificada (defaults + custom)
+ *   customOfType: Array,    // TODAS las custom (nombre legado mantenido)
+ *   defaults: string[],     // solo las default (para bloquear borrado)
  * }}
  */
-export default function useCategories(tipo, customCategories) {
+export default function useCategories(_tipo, customCategories) {
   return useMemo(() => {
-    const defaults = getDefaultCategories(tipo);
+    // 🌐 Lista única de defaults — sin filtrar por tipo.
+    const defaults = getDefaultCategories();
 
-    // 🌐 Categorías custom: TODAS, sin filtrar por tipo — son globales.
-    // Mantenemos la misma prop (customOfType) por compatibilidad con el
-    // resto del código, pero ahora contiene todas las custom del usuario.
+    // Todas las categorías custom son globales y se ven siempre.
     const allCustom = (customCategories || []);
 
     // Construir labels de las custom y eliminar duplicados contra los defaults
@@ -44,8 +45,8 @@ export default function useCategories(tipo, customCategories) {
 
     return {
       categories: [...defaults, ...customLabels],
-      customOfType: allCustom,
+      customOfType: allCustom, // nombre legado, ahora contiene TODAS
       defaults,
     };
-  }, [tipo, customCategories]);
+  }, [customCategories]);
 }
