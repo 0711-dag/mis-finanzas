@@ -8,6 +8,12 @@
 //
 // Llama a addOrUpdateBudget / removeBudget con opts.categoryId=true
 // siempre que se trabaje con IDs de v2.
+//
+// 🆕 Vista simplificada: solo muestra categorías CON presupuesto definido.
+//    Las categorías sin presupuesto y el "Total del ciclo" agregado se
+//    han retirado para reducir ruido visual. Los cálculos siguen
+//    haciéndose (por compatibilidad con el chip global de la cabecera
+//    de Gastos Variables), simplemente no se pintan aquí.
 // ══════════════════════════════════════════════
 import { useState } from "react";
 import { fmt } from "../utils/format.js";
@@ -35,13 +41,16 @@ export default function BudgetPanel({
     : [];
 
   const usage = calcBudgetUsage(budgets, variableExpenses, cycleMK, categories || []);
-  const { categorias, totalPresupuestado, totalGastado, totalRestante } = usage;
+  const { categorias } = usage;
 
-  const pctTotal = totalPresupuestado > 0 ? (totalGastado / totalPresupuestado) * 100 : 0;
+  // 🆕 Filtramos: solo nos interesan las categorías que tienen presupuesto
+  // definido (>0). Las que están en "sin_presupuesto" (gastos sueltos sin
+  // tope, "__sin__", etc.) se ocultan en este panel.
+  const categoriasConPresupuesto = categorias.filter((c) => c.presupuestado > 0);
 
   // Categorías con presupuesto ya definido (para excluirlas del select "añadir")
   const yaPresupuestadas = new Set(
-    categorias.filter((c) => c.presupuestado > 0).map((c) => c._key)
+    categoriasConPresupuesto.map((c) => c._key)
   );
   const disponibles = itemsSource.filter((c) => !yaPresupuestadas.has(c.id));
 
@@ -60,7 +69,7 @@ export default function BudgetPanel({
     setEditValue("");
   };
 
-  // 🆕 Borrar el presupuesto de UNA categoría (con confirmación).
+  // Borrar el presupuesto de UNA categoría (con confirmación).
   // No toca los gastos variables: solo elimina el monto presupuestado.
   const handleDeleteRow = (row) => {
     const nombre = row.categoria || "esta categoría";
@@ -102,11 +111,11 @@ export default function BudgetPanel({
   const stateColor = (estado) => {
     if (estado === "excedido") return "var(--danger)";
     if (estado === "alerta") return "var(--warning)";
-    if (estado === "sin_presupuesto") return "var(--text-tertiary)";
     return "var(--success)";
   };
 
-  const sinPresupuesto = categorias.filter((c) => c.presupuestado > 0).length === 0;
+  // 🆕 Estado vacío: no hay ningún presupuesto definido en el ciclo
+  const sinPresupuesto = categoriasConPresupuesto.length === 0;
 
   return (
     <div style={{
@@ -129,53 +138,7 @@ export default function BudgetPanel({
         </div>
       </div>
 
-      {!sinPresupuesto && (
-        <div style={{
-          background: "var(--bg-surface)",
-          borderRadius: "var(--radius-sm)",
-          padding: 12, marginBottom: 12,
-        }}>
-          <div style={{
-            display: "flex", justifyContent: "space-between",
-            alignItems: "baseline", marginBottom: 6,
-          }}>
-            <div style={{ fontSize: 11, color: "var(--text-secondary)", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>
-              Total del ciclo
-            </div>
-            <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-              {pctTotal.toFixed(0)}% usado
-            </div>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", fontFeatureSettings: "'tnum'" }}>
-              {fmt(totalGastado)}
-            </div>
-            <div style={{ fontSize: 13, color: "var(--text-secondary)", fontFeatureSettings: "'tnum'" }}>
-              de {fmt(totalPresupuestado)}
-            </div>
-          </div>
-          <div className="progress" style={{ height: 6 }}>
-            <div
-              className="progress__fill"
-              style={{
-                width: `${Math.min(100, pctTotal)}%`,
-                background: pctTotal >= 100 ? "var(--danger)"
-                  : pctTotal >= 80 ? "var(--warning)"
-                  : "var(--accent)",
-              }}
-            />
-          </div>
-          <div style={{
-            marginTop: 8, fontSize: 12,
-            color: totalRestante >= 0 ? "var(--success)" : "var(--danger)",
-            fontWeight: 600,
-          }}>
-            {totalRestante >= 0 ? `Te quedan ${fmt(totalRestante)}` : `Excedido en ${fmt(Math.abs(totalRestante))}`}
-          </div>
-        </div>
-      )}
-
-      {sinPresupuesto && categorias.length === 0 ? (
+      {sinPresupuesto ? (
         <div style={{
           padding: 20, textAlign: "center",
           color: "var(--text-secondary)", fontSize: 13,
@@ -190,7 +153,7 @@ export default function BudgetPanel({
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {categorias.map((c) => {
+          {categoriasConPresupuesto.map((c) => {
             const emoji = c.categoria.split(" ")[0] || "📦";
             const nombre = c.categoria.replace(/^[^\s]+\s/, "") || c.categoria;
             const color = stateColor(c.estado);
@@ -248,75 +211,46 @@ export default function BudgetPanel({
                           {fmt(c.gastado)}
                         </div>
                         <div style={{ fontSize: 10, color: "var(--text-tertiary)", fontFeatureSettings: "'tnum'" }}>
-                          {c.presupuestado > 0 ? `de ${fmt(c.presupuestado)}` : "sin presupuesto"}
+                          de {fmt(c.presupuestado)}
                         </div>
                       </div>
-                      {c.presupuestado > 0 && (
-                        <>
-                          <button
-                            className="edit-icon"
-                            onClick={() => {
-                              setEditingKey(c._key);
-                              setEditValue(String(c.presupuestado));
-                            }}
-                            title="Editar presupuesto"
-                            style={{ marginLeft: 4 }}
-                          >✏️</button>
-                          {/* 🆕 Botón papelera: borrar presupuesto de esta categoría */}
-                          <button
-                            className="edit-icon"
-                            onClick={() => handleDeleteRow(c)}
-                            title="Quitar presupuesto de esta categoría"
-                            style={{ marginLeft: 2 }}
-                          >🗑️</button>
-                        </>
-                      )}
-                      {c.presupuestado === 0 && c.estado === "sin_presupuesto" && c._key !== "__sin__" && (
-                        <button
-                          className="edit-icon"
-                          onClick={() => {
-                            setEditingKey(c._key);
-                            setEditValue("");
-                          }}
-                          title="Añadir presupuesto"
-                          style={{ marginLeft: 4, fontSize: 14 }}
-                        >＋</button>
-                      )}
+                      <button
+                        className="edit-icon"
+                        onClick={() => {
+                          setEditingKey(c._key);
+                          setEditValue(String(c.presupuestado));
+                        }}
+                        title="Editar presupuesto"
+                        style={{ marginLeft: 4 }}
+                      >✏️</button>
+                      <button
+                        className="edit-icon"
+                        onClick={() => handleDeleteRow(c)}
+                        title="Quitar presupuesto de esta categoría"
+                        style={{ marginLeft: 2 }}
+                      >🗑️</button>
                     </div>
                   )}
                 </div>
 
-                {c.presupuestado > 0 && (
-                  <>
-                    <div className="progress" style={{ height: 5 }}>
-                      <div
-                        className="progress__fill"
-                        style={{
-                          width: `${Math.min(100, pct)}%`,
-                          background: color,
-                        }}
-                      />
-                    </div>
-                    <div style={{
-                      marginTop: 4, fontSize: 11, color, fontWeight: 600,
-                      display: "flex", justifyContent: "space-between",
-                    }}>
-                      <span>{pct.toFixed(0)}%</span>
-                      <span>
-                        {c.restante >= 0 ? `Quedan ${fmt(c.restante)}` : `Excedido ${fmt(Math.abs(c.restante))}`}
-                      </span>
-                    </div>
-                  </>
-                )}
-
-                {c.estado === "sin_presupuesto" && (
-                  <div style={{
-                    fontSize: 11, color: "var(--text-tertiary)",
-                    fontStyle: "italic",
-                  }}>
-                    {c._key === "__sin__" ? "Gastos sin categoría asignada" : "Sin presupuesto asignado"}
-                  </div>
-                )}
+                <div className="progress" style={{ height: 5 }}>
+                  <div
+                    className="progress__fill"
+                    style={{
+                      width: `${Math.min(100, pct)}%`,
+                      background: color,
+                    }}
+                  />
+                </div>
+                <div style={{
+                  marginTop: 4, fontSize: 11, color, fontWeight: 600,
+                  display: "flex", justifyContent: "space-between",
+                }}>
+                  <span>{pct.toFixed(0)}%</span>
+                  <span>
+                    {c.restante >= 0 ? `Quedan ${fmt(c.restante)}` : `Excedido ${fmt(Math.abs(c.restante))}`}
+                  </span>
+                </div>
               </div>
             );
           })}
