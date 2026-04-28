@@ -60,6 +60,30 @@ export default function BudgetPanel({
     setEditValue("");
   };
 
+  // 🆕 Borrar el presupuesto de UNA categoría (con confirmación).
+  // No toca los gastos variables: solo elimina el monto presupuestado.
+  const handleDeleteRow = (row) => {
+    const nombre = row.categoria || "esta categoría";
+    const ok = window.confirm(
+      `¿Quitar el presupuesto de "${nombre}"?\n\n` +
+      `Solo se borra el monto presupuestado. Los gastos variables NO se eliminan.`
+    );
+    if (!ok) return;
+
+    if (row.categoryId) {
+      removeBudget(cycleMK, row.categoryId, { categoryId: true });
+    } else {
+      // Fila legacy (sin ID resuelto) — seguimos por string
+      removeBudget(cycleMK, row._key);
+    }
+
+    // Si estábamos editando justo esta fila, salimos del modo edición.
+    if (editingKey === row._key) {
+      setEditingKey(null);
+      setEditValue("");
+    }
+  };
+
   const handleAddNew = () => {
     if (!newCatId || !newAmount) return;
     const ok = addOrUpdateBudget(cycleMK, newCatId, parseFloat(newAmount) || 0, { categoryId: true });
@@ -228,15 +252,24 @@ export default function BudgetPanel({
                         </div>
                       </div>
                       {c.presupuestado > 0 && (
-                        <button
-                          className="edit-icon"
-                          onClick={() => {
-                            setEditingKey(c._key);
-                            setEditValue(String(c.presupuestado));
-                          }}
-                          title="Editar presupuesto"
-                          style={{ marginLeft: 4 }}
-                        >✏️</button>
+                        <>
+                          <button
+                            className="edit-icon"
+                            onClick={() => {
+                              setEditingKey(c._key);
+                              setEditValue(String(c.presupuestado));
+                            }}
+                            title="Editar presupuesto"
+                            style={{ marginLeft: 4 }}
+                          >✏️</button>
+                          {/* 🆕 Botón papelera: borrar presupuesto de esta categoría */}
+                          <button
+                            className="edit-icon"
+                            onClick={() => handleDeleteRow(c)}
+                            title="Quitar presupuesto de esta categoría"
+                            style={{ marginLeft: 2 }}
+                          >🗑️</button>
+                        </>
                       )}
                       {c.presupuestado === 0 && c.estado === "sin_presupuesto" && c._key !== "__sin__" && (
                         <button
