@@ -52,7 +52,22 @@ export default function VariableExpenses({
     data?.categories || []
   );
   const hayPresupuesto = usage.totalPresupuestado > 0;
-  const pctGlobal = hayPresupuesto ? (usage.totalGastado / usage.totalPresupuestado) * 100 : 0;
+
+  // 🛠️ FIX (chip): el porcentaje del chip debe medirse SOLO con el gasto
+  // de las categorías que tienen presupuesto definido. `usage.totalGastado`
+  // suma todo el gasto variable del ciclo (incluido el de categorías sin
+  // presupuesto), lo que hacía que apareciera "309% usado" cuando había
+  // gasto en categorías no presupuestadas.
+  //
+  // Recalculamos aquí solo a efectos del chip, sin tocar `calcBudgetUsage`
+  // (lo siguen consumiendo el panel y el informe sin cambios).
+  const gastadoEnPresupuestos = usage.categorias
+    .filter((c) => c.presupuestado > 0)
+    .reduce((s, c) => s + (Number(c.gastado) || 0), 0);
+
+  const pctGlobal = hayPresupuesto
+    ? (gastadoEnPresupuestos / usage.totalPresupuestado) * 100
+    : 0;
 
   const chipColor = pctGlobal >= 100 ? "danger"
     : pctGlobal >= 80 ? "warning"
@@ -197,7 +212,7 @@ export default function VariableExpenses({
           <span>📊</span>
           <span>
             {hayPresupuesto
-              ? `Presupuesto: ${fmt(usage.totalGastado)} / ${fmt(usage.totalPresupuestado)} (${pctGlobal.toFixed(0)}%)`
+              ? `Presupuesto: ${fmt(gastadoEnPresupuestos)} / ${fmt(usage.totalPresupuestado)} (${pctGlobal.toFixed(0)}%)`
               : "Definir presupuesto"}
           </span>
         </span>
