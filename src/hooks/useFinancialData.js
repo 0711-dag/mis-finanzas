@@ -416,23 +416,43 @@ export default function useFinancialData(user) {
 
   // ══════════════════════════════════════════════
   // 🆕 PRESUPUESTO POR CATEGORÍA
+  // ──────────────────────────────────────────────
+  // 🛠️ FIX: ahora aceptan opts.categoryId === true para operar por
+  //         categoryId (esquema v2) en vez de por el string `categoria`.
+  //         Sin opts, mantienen la firma antigua (compatibilidad).
   // ══════════════════════════════════════════════
 
   /**
    * Crea o actualiza el presupuesto de una categoría en un ciclo.
-   * Si ya existe para (ciclo, categoría), se sobrescribe.
+   * Si ya existe para (ciclo, clave), se sobrescribe.
+   *
+   * Firmas admitidas:
+   *   addOrUpdateBudget(cycleMK, "🍔 Comida", 250)                       // legacy
+   *   addOrUpdateBudget(cycleMK, "default_comida", 250, { categoryId: true })  // v2
    */
   const addOrUpdateBudget = useCallback(
-    (cycleMK, categoria, monto) => {
+    (cycleMK, key, monto, opts = {}) => {
       if (!data) return false;
-      const validation = validateBudget({ cycleMK, categoria, monto });
+      const useCategoryId = !!opts.categoryId;
+
+      // Validamos pasando el campo correcto al validador.
+      const validationInput = useCategoryId
+        ? { cycleMK, categoryId: key, monto }
+        : { cycleMK, categoria: key, monto };
+      const validation = validateBudget(validationInput);
       if (!validation.valid) {
         setValidationError(validation.errors.join(". "));
         return false;
       }
       const clean = validation.data;
-      const existing = (data.budgets || []).find(
-        (b) => b.cycleMK === clean.cycleMK && b.categoria === clean.categoria
+
+      // Buscar el existente por la clave correcta:
+      //  - v2 → por categoryId
+      //  - legacy → por categoria (string)
+      const existing = (data.budgets || []).find((b) =>
+        useCategoryId
+          ? (b.cycleMK === clean.cycleMK && b.categoryId === clean.categoryId)
+          : (b.cycleMK === clean.cycleMK && b.categoria === clean.categoria)
       );
 
       let budgets;
@@ -455,14 +475,33 @@ export default function useFinancialData(user) {
     [data, save]
   );
 
+  /**
+   * Elimina el presupuesto de un (ciclo, clave) concreto.
+   *
+   * Firmas admitidas:
+   *   removeBudget(cycleMK, "🍔 Comida")                           // legacy
+   *   removeBudget(cycleMK, "default_comida", { categoryId: true })// v2
+   *
+   * Cuando se borra por categoryId, también se barren los registros
+   * legacy que tengan ese mismo id en `categoria` (defensivo).
+   */
   const removeBudget = useCallback(
-    (cycleMK, categoria) => {
+    (cycleMK, key, opts = {}) => {
       if (!data) return;
+      const useCategoryId = !!opts.categoryId;
+
       save({
         ...data,
-        budgets: (data.budgets || []).filter(
-          (b) => !(b.cycleMK === cycleMK && b.categoria === categoria)
-        ),
+        budgets: (data.budgets || []).filter((b) => {
+          if (b.cycleMK !== cycleMK) return true;
+          if (useCategoryId) {
+            // Coincide por categoryId o, defensivamente, por string
+            // "categoria" si ahí hubieran guardado el id por error.
+            return !(b.categoryId === key || b.categoria === key);
+          }
+          // Modo legacy: solo por string `categoria`
+          return b.categoria !== key;
+        }),
       });
     },
     [data, save]
@@ -471,6 +510,9 @@ export default function useFinancialData(user) {
   /**
    * Copia los presupuestos del ciclo anterior al ciclo actual.
    * Útil al inicio de cada ciclo para no repetir trabajo.
+   *
+   * 🛠️ FIX: ahora preserva categoryId si lo había, y dedupe por la
+   *         clave correcta (categoryId si existe, si no por categoria).
    */
   const copyBudgetsFromPrevCycle = useCallback(
     (targetCycleMK, sourceCycleMK) => {
@@ -478,18 +520,22 @@ export default function useFinancialData(user) {
       const source = (data.budgets || []).filter((b) => b.cycleMK === sourceCycleMK);
       if (source.length === 0) return;
 
+      // Conjunto de claves ya presentes en el target — para no duplicar.
+      const keyOf = (b) => b.categoryId || b.categoria || "";
       const existingInTarget = new Set(
         (data.budgets || [])
           .filter((b) => b.cycleMK === targetCycleMK)
-          .map((b) => b.categoria)
+          .map(keyOf)
       );
 
       const copied = source
-        .filter((b) => !existingInTarget.has(b.categoria))
+        .filter((b) => !existingInTarget.has(keyOf(b)))
         .map((b) => ({
           id: genId(),
           cycleMK: targetCycleMK,
-          categoria: b.categoria,
+          // Preservamos AMBOS campos para mantener la integridad v2 + legacy
+          categoryId: b.categoryId || "",
+          categoria: b.categoria || "",
           monto: b.monto,
         }));
 
