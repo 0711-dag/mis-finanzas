@@ -1,13 +1,16 @@
 // ══════════════════════════════════════════════
 // 📈 Tarjetas de métricas financieras (bloque superior)
 //
-// Estructura en 3 filas de 3 cards:
-//   Fila 1: Balance del ciclo · Egresos totales · Pendiente
-//   Fila 2: CF · CV · Discrecional
-//   Fila 3: Ingresos · Ratio endeudamiento · Aportes a metas
+// Estructura en 2 filas (rejilla de 4 columnas, 7 cards totales):
+//   Fila 1: Balance del ciclo (span 2) · Pendiente · Ratio endeudamiento
+//   Fila 2: Egresos totales · Ingresos · CF · CV
 //
+// Balance ocupa el doble de ancho por ser la métrica principal.
 // Fuente única de egresos: calcExpenseBreakdown (finance.js).
-// Se elimina la redundancia histórica de `totalPayments + totalVarExpenses`.
+// Se mantiene la suma interna de "discrecional" pero ya no se muestra
+// como card independiente. Igualmente se oculta "Aportes a metas"
+// (sigue calculándose en finance.js para el informe mensual).
+//
 // Usado tanto en Dashboard desktop como en MobileSummary.
 // ══════════════════════════════════════════════
 import { fmt } from "../utils/format.js";
@@ -51,20 +54,16 @@ export default function MetricsCards({ data, selectedMonth, totalPending = 0, co
   };
 
   // ── Colores por tipo de gasto (reutilizan paleta existente) ──
-  // CF: rojo (no renunciable) · CV: naranja (necesario pero modulable) · Discrecional: violeta (opcional)
+  // CF: rojo (no renunciable) · CV: naranja (necesario pero modulable)
   const cfColor = { fg: "var(--danger)",  bg: "var(--danger-bg)",  text: "var(--danger-text)" };
   const cvColor = { fg: "var(--warning)", bg: "var(--warning-bg)", text: "var(--warning-text)" };
-  const discColor = {
-    fg: "var(--category-debt, var(--accent))",
-    bg: "var(--category-debt-bg, var(--bg-subtle))",
-    text: "var(--category-debt, var(--accent))",
-  };
 
   const ingresosOk = metrics.ingresos > 0;
 
-  // ── Definición de las 9 cards (en orden de render) ──
+  // ── Definición de las 7 cards (en orden de render) ──
+  // `span` indica cuántas columnas ocupa la card en la rejilla de 4 columnas.
   const cards = [
-    // ══ FILA 1: Balance · Egresos totales · Pendiente ══
+    // ══ FILA 1: Balance (×2) · Pendiente · Ratio endeudamiento ══
     {
       label: "Balance del ciclo",
       icon: "⚖️",
@@ -72,25 +71,12 @@ export default function MetricsCards({ data, selectedMonth, totalPending = 0, co
       sub: `${fmt(metrics.ingresos)} entran · ${fmt(breakdown.egresosTotales)} salen`,
       tag: balanceLabel,
       color: colorMap[balanceColorKey],
+      span: 2,
       info: {
         title: "Balance del ciclo",
         description:
           "Es lo que queda tras cubrir todos tus egresos. Positivo = ahorras. Negativo = gastas más de lo que ingresas.",
         formula: "Ingresos − Egresos totales",
-      },
-    },
-    {
-      label: "Egresos totales",
-      icon: "📤",
-      value: fmt(breakdown.egresosTotales),
-      sub: `CF + CV + Discrecional`,
-      tag: null,
-      color: colorMap.danger,
-      info: {
-        title: "Egresos totales",
-        description:
-          "Todo lo que sale en el ciclo, sumando gastos fijos, cuotas de deuda, gastos variables y discrecionales.",
-        formula: "CF + CV + Discrecional",
       },
     },
     {
@@ -100,6 +86,7 @@ export default function MetricsCards({ data, selectedMonth, totalPending = 0, co
       sub: totalPending > 0 ? "Pagos sin marcar" : "Todo al día",
       tag: null,
       color: totalPending > 0 ? colorMap.warning : colorMap.success,
+      span: 1,
       info: {
         title: "Pendiente de pago",
         description:
@@ -107,8 +94,53 @@ export default function MetricsCards({ data, selectedMonth, totalPending = 0, co
         formula: "Σ pagos con estado = PENDIENTE",
       },
     },
+    {
+      label: "Ratio endeudamiento",
+      icon: "💳",
+      value: ingresosOk ? `${ratio.toFixed(1)}%` : "—",
+      sub: ingresosOk ? `${fmt(metrics.cuotasDeuda)} en cuotas` : "Sin ingresos",
+      tag: ratioEval.label,
+      color: colorMap[ratioEval.color] || colorMap.success,
+      span: 1,
+      info: {
+        title: "Ratio de endeudamiento",
+        description:
+          "Qué porcentaje de tus ingresos se va en cuotas de deuda. Saludable < 20%, aceptable < 35%, crítico > 50%.",
+        formula: "(Cuotas de deuda ÷ Ingresos) × 100",
+      },
+    },
 
-    // ══ FILA 2: CF · CV · Discrecional ══
+    // ══ FILA 2: Egresos totales · Ingresos · CF · CV ══
+    {
+      label: "Egresos totales",
+      icon: "📤",
+      value: fmt(breakdown.egresosTotales),
+      sub: "CF + CV + otros",
+      tag: null,
+      color: colorMap.danger,
+      span: 1,
+      info: {
+        title: "Egresos totales",
+        description:
+          "Todo lo que sale en el ciclo: gastos fijos, cuotas de deuda, gastos variables y otros.",
+        formula: "Σ egresos del ciclo",
+      },
+    },
+    {
+      label: "Ingresos",
+      icon: "💰",
+      value: fmt(metrics.ingresos),
+      sub: ingresosOk ? "Entran este ciclo" : "Sin ingresos registrados",
+      tag: null,
+      color: colorMap.success,
+      span: 1,
+      info: {
+        title: "Ingresos del ciclo",
+        description:
+          "Suma de todos los ingresos registrados dentro del ciclo financiero seleccionado.",
+        formula: "Σ ingresos del ciclo",
+      },
+    },
     {
       label: "CF · Costo fijo",
       icon: "🏠",
@@ -116,6 +148,7 @@ export default function MetricsCards({ data, selectedMonth, totalPending = 0, co
       sub: "Vivienda, seguros, cuotas…",
       tag: null,
       color: cfColor,
+      span: 1,
       info: {
         title: "Costo Fijo (CF)",
         description:
@@ -130,6 +163,7 @@ export default function MetricsCards({ data, selectedMonth, totalPending = 0, co
       sub: "Luz, agua, súper, transporte…",
       tag: null,
       color: cvColor,
+      span: 1,
       info: {
         title: "Costo Variable (CV)",
         description:
@@ -137,71 +171,13 @@ export default function MetricsCards({ data, selectedMonth, totalPending = 0, co
         formula: "Σ gastos clasificados como CV",
       },
     },
-    {
-      label: "Discrecional",
-      icon: "🎭",
-      value: fmt(breakdown.discrecional),
-      sub: "Ocio, ropa, suscripciones…",
-      tag: null,
-      color: discColor,
-      info: {
-        title: "Gasto discrecional",
-        description:
-          "Opcional, no esencial. Es la primera palanca cuando hay que recortar: ocio, restaurantes, ropa, suscripciones.",
-        formula: "Σ gastos clasificados como Discrecional",
-      },
-    },
-
-    // ══ FILA 3: Ingresos · Ratio endeudamiento · Aportes a metas ══
-    {
-      label: "Ingresos",
-      icon: "💰",
-      value: fmt(metrics.ingresos),
-      sub: ingresosOk ? "Entran este ciclo" : "Sin ingresos registrados",
-      tag: null,
-      color: colorMap.success,
-      info: {
-        title: "Ingresos del ciclo",
-        description:
-          "Suma de todos los ingresos registrados dentro del ciclo financiero seleccionado.",
-        formula: "Σ ingresos del ciclo",
-      },
-    },
-    {
-      label: "Ratio endeudamiento",
-      icon: "💳",
-      value: ingresosOk ? `${ratio.toFixed(1)}%` : "—",
-      sub: ingresosOk ? `${fmt(metrics.cuotasDeuda)} en cuotas` : "Sin ingresos",
-      tag: ratioEval.label,
-      color: colorMap[ratioEval.color] || colorMap.success,
-      info: {
-        title: "Ratio de endeudamiento",
-        description:
-          "Qué porcentaje de tus ingresos se va en cuotas de deuda. Saludable < 20%, aceptable < 35%, crítico > 50%.",
-        formula: "(Cuotas de deuda ÷ Ingresos) × 100",
-      },
-    },
-    {
-      label: "Aportes a metas",
-      icon: "🎯",
-      value: fmt(metrics.aportesMetas),
-      sub: metrics.aportesMetas > 0 ? "Depositado este ciclo" : "Sin aportes este ciclo",
-      tag: null,
-      color: metrics.aportesMetas > 0 ? colorMap.success : colorMap.neutral,
-      info: {
-        title: "Aportes a metas de ahorro",
-        description:
-          "Dinero que has depositado en tus metas de ahorro durante este ciclo. Es ahorro efectivo, ya apartado.",
-        formula: "Σ depósitos a metas del ciclo",
-      },
-    },
   ];
 
-  // ── Render: grid fijo de 3 columnas en ambos modos ──
+  // ── Render: grid de 4 columnas, con span variable (Balance ocupa 2) ──
   return (
     <div style={{
       display: "grid",
-      gridTemplateColumns: "repeat(3, 1fr)",
+      gridTemplateColumns: "repeat(4, 1fr)",
       gap: compact ? 6 : 10,
       marginBottom: compact ? 12 : 18,
     }}>
@@ -219,6 +195,7 @@ export default function MetricsCards({ data, selectedMonth, totalPending = 0, co
             position: "relative",
             minWidth: 0,
             overflow: "visible", // necesario para que el popover/tooltip no quede recortado
+            gridColumn: c.span ? `span ${c.span}` : undefined,
           }}
         >
           {/* Icono de información en la esquina superior derecha */}
